@@ -131,7 +131,7 @@ db.run(`CREATE TABLE IF NOT EXISTS game_squads (
     if (err) console.error("Error creating game squads table:", err);
 });
 
-// Create squad_members table to track squad memberships (fixed table name)
+// Create squad_members table to track squad memberships
 db.run(`CREATE TABLE IF NOT EXISTS squad_members (
     squad_id INTEGER,
     user_id INTEGER,
