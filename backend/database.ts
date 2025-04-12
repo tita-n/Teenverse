@@ -4,7 +4,7 @@ export const db = new sqlite3.Database("users.db", (err) => {
     if (err) console.error("Database connection error:", err);
 });
 
-// Users table (removed mode column)
+// Users table (added creator_badge column)
 db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE,
@@ -17,12 +17,13 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
     level INTEGER DEFAULT 1,
     last_login TEXT DEFAULT NULL,
     snitch_status TEXT DEFAULT 'clean',
-    title TEXT DEFAULT NULL
+    title TEXT DEFAULT NULL,
+    creator_badge TEXT DEFAULT NULL -- New column for special badge
 )`, (err) => {
     if (err) console.error("Error creating users table:", err);
 });
 
-// Posts table (removed post_mode column)
+// Posts table
 db.run(`CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -71,7 +72,7 @@ db.run(`CREATE TABLE IF NOT EXISTS coin_flip_history (
     if (err) console.error("Error creating coin flip history table:", err);
 });
 
-// Hype battles table (removed post_mode column)
+// Hype battles table
 db.run(`CREATE TABLE IF NOT EXISTS hype_battles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -114,7 +115,7 @@ db.run(`CREATE TABLE IF NOT EXISTS scheduled_battles (
     if (err) console.error("Error creating scheduled battles table:", err);
 });
 
-// Update game_squads table to include status, max_members, and wins
+// Update game_squads table to include is_featured column
 db.run(`CREATE TABLE IF NOT EXISTS game_squads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -126,6 +127,7 @@ db.run(`CREATE TABLE IF NOT EXISTS game_squads (
     status TEXT DEFAULT 'open', -- 'open' or 'closed'
     max_members INTEGER DEFAULT 5, -- Default max members
     wins INTEGER DEFAULT 0, -- Track wins for leaderboards
+    is_featured INTEGER DEFAULT 0, -- New column: 1 if featured, 0 if not
     FOREIGN KEY(user_id) REFERENCES users(id)
 )`, (err) => {
     if (err) console.error("Error creating game squads table:", err);
@@ -207,3 +209,13 @@ db.run(`CREATE TABLE IF NOT EXISTS hall_of_fame (
 )`, (err) => {
     if (err) console.error("Error creating hall of fame table:", err);
 });
+
+// Set the creator_badge for restorationmichael3@gmail.com
+db.run(
+    `UPDATE users SET creator_badge = 'Platform Creator' WHERE email = ?`,
+    ["restorationmichael3@gmail.com"],
+    (err) => {
+        if (err) console.error("Error setting creator badge:", err);
+        else console.log("Creator badge set for restorationmichael3@gmail.com");
+    }
+);
