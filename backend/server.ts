@@ -166,11 +166,11 @@ app.post("/api/login", async (req, res) => {
     }
 });
 
-// Get user data (for verifying token)
+// Get user data (for verifying token) - Modified to include creator_badge
 app.get("/api/users/me", authenticateToken, async (req: any, res) => {
     try {
         const user = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, email, username FROM users WHERE email = ?", [req.user.email], (err, row) => {
+            db.get("SELECT id, email, username, creator_badge FROM users WHERE email = ?", [req.user.email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -187,7 +187,7 @@ app.get("/api/users/me", authenticateToken, async (req: any, res) => {
     }
 });
 
-// Create post endpoint (used for rants as well)
+// Create post endpoint (used for rants as well) - Modified to give bonus XP/coins to creator
 app.post("/api/create-post", authenticateToken, async (req, res) => {
     try {
         const { email, content, mode } = req.body;
@@ -218,7 +218,17 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
             );
         });
 
-        const newXP = user.xp + 5;
+        // Standard XP and coins
+        let xpBonus = 5;
+        let coinBonus = 5;
+
+        // Bonus for platform creator
+        if (email === "restorationmichael3@gmail.com") {
+            xpBonus += 5; // Extra 5 XP
+            coinBonus += 5; // Extra 5 coins
+        }
+
+        const newXP = user.xp + xpBonus;
         await new Promise<void>((resolve, reject) => {
             db.run("UPDATE users SET xp = ? WHERE id = ?", [newXP, user.id], (err) => {
                 if (err) reject(err);
@@ -226,7 +236,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
             });
         });
 
-        const newCoins = user.coins + 5;
+        const newCoins = user.coins + coinBonus;
         await new Promise<void>((resolve, reject) => {
             db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err) => {
                 if (err) reject(err);
@@ -234,7 +244,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
             });
         });
 
-        res.json({ message: "Post created! +5 XP and +5 coins", newXP, newCoins });
+        res.json({ message: `Post created! +${xpBonus} XP and +${coinBonus} coins`, newXP, newCoins });
     } catch (err) {
         console.error(`[${new Date().toISOString()}] Create post error:`, err);
         res.status(500).json({ message: "Error creating post" });
@@ -481,12 +491,12 @@ app.post("/api/like", authenticateToken, async (req, res) => {
     }
 });
 
-// Game Squad endpoints
+// Game Squad endpoints - Modified to sort by is_featured
 app.get("/api/game-squads", authenticateToken, async (req, res) => {
     try {
         const squads: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT g.*, u.username as actual_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.created_at DESC",
+                "SELECT g.*, u.username as actual_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.is_featured DESC, g.created_at DESC",
                 [],
                 (err, rows) => {
                     if (err) reject(err);
@@ -511,7 +521,7 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
+            db.get("SELECT id, username, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -545,7 +555,25 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
             );
         });
 
-        res.json({ message: "Game squad created!", squadId: squad.id });
+        // Bonus XP and coins for creating a squad (with extra for platform creator)
+        let xpBonus = 10; // Standard bonus
+        let coinBonus = 10; // Standard bonus
+        if (email === "restorationmichael3@gmail.com") {
+            xpBonus += 5; // Extra 5 XP
+            coinBonus += 5; // Extra 5 coins
+        }
+
+        const newXP = user.xp + xpBonus;
+        const newCoins = user.coins + coinBonus;
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.json({ message: `Game squad created! +${xpBonus} XP and +${coinBonus} coins`, squadId: squad.id, newXP, newCoins });
     } catch (err) {
         console.error(`[${new Date().toISOString()}] Create game squad error:`, err);
         res.status(500).json({ message: "Internal server error", error: err.message });
@@ -617,6 +645,100 @@ app.post("/api/game-squads/join", authenticateToken, async (req, res) => {
     }
 });
 
+// Manage game squad status (admin-only for restorationmichael3@gmail.com)
+app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) => {
+    try {
+        const { email, squadId, newStatus } = req.body;
+
+        // Check if the user is the platform creator
+        if (email !== "restorationmichael3@gmail.com") {
+            return res.status(403).json({ message: "Only the platform creator can manage squad status" });
+        }
+
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        // Validate newStatus
+        if (!["open", "closed"].includes(newStatus)) {
+            return res.status(400).json({ message: "Invalid status. Must be 'open' or 'closed'." });
+        }
+
+        // Check if the squad exists
+        const squad: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM game_squads WHERE id = ?", [squadId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!squad) return res.status(404).json({ message: "Squad not found" });
+
+        // Update the squad's status
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "UPDATE game_squads SET status = ? WHERE id = ?",
+                [newStatus, squadId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: `Squad status updated to ${newStatus}!` });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Error managing squad status:`, err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+});
+
+// Feature a game squad (admin-only for restorationmichael3@gmail.com)
+app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
+    try {
+        const { email, squadId, feature } = req.body;
+
+        // Check if the user is the platform creator
+        if (email !== "restorationmichael3@gmail.com") {
+            return res.status(403).json({ message: "Only the platform creator can feature squads" });
+        }
+
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        // Validate feature value
+        const isFeatured = feature ? 1 : 0;
+
+        // Check if the squad exists
+        const squad: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM game_squads WHERE id = ?", [squadId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!squad) return res.status(404).json({ message: "Squad not found" });
+
+        // Update the squad's is_featured status
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "UPDATE game_squads SET is_featured = ? WHERE id = ?",
+                [isFeatured, squadId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: `Squad ${isFeatured ? 'featured' : 'unfeatured'} successfully!` });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Error featuring squad:`, err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+});
+
 // Get game squad leaderboard
 app.get("/api/game-squads/leaderboard", authenticateToken, async (req, res) => {
     try {
@@ -646,7 +768,7 @@ app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+            db.get("SELECT id, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -671,9 +793,85 @@ app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
             });
         });
 
-        res.json({ message: "Win reported successfully!" });
+        // Bonus XP and coins for reporting a win (with extra for platform creator)
+        let xpBonus = 5; // Standard bonus
+        let coinBonus = 5; // Standard bonus
+        if (email === "restorationmichael3@gmail.com") {
+            xpBonus += 5; // Extra 5 XP
+            coinBonus += 5; // Extra 5 coins
+        }
+
+        const newXP = user.xp + xpBonus;
+        const newCoins = user.coins + coinBonus;
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.json({ message: `Win reported successfully! +${xpBonus} XP and +${coinBonus} coins`, newXP, newCoins });
     } catch (err) {
         res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Platform analytics (admin-only for restorationmichael3@gmail.com)
+app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
+    try {
+        const { email } = req.user;
+
+        // Check if the user is the platform creator
+        if (email !== "restorationmichael3@gmail.com") {
+            return res.status(403).json({ message: "Only the platform creator can access analytics" });
+        }
+
+        // Total number of users
+        const totalUsers: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        // Total number of game squads
+        const totalSquads: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as count FROM game_squads", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        // Total number of posts
+        const totalPosts: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as count FROM posts", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        // Most popular games (based on game_squads)
+        const popularGames: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT game_name, COUNT(*) as count FROM game_squads GROUP BY game_name ORDER BY count DESC LIMIT 5",
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        res.json({
+            totalUsers: totalUsers.count,
+            totalSquads: totalSquads.count,
+            totalPosts: totalPosts.count,
+            popularGames,
+        });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Error fetching platform analytics:`, err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
     }
 });
 
@@ -790,7 +988,7 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+            db.get("SELECT id, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -842,7 +1040,25 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
             });
         });
 
-        res.json({ message: "Winner declared successfully!" });
+        // Bonus XP and coins for declaring a winner (with extra for platform creator)
+        let xpBonus = 5; // Standard bonus
+        let coinBonus = 5; // Standard bonus
+        if (email === "restorationmichael3@gmail.com") {
+            xpBonus += 5; // Extra 5 XP
+            coinBonus += 5; // Extra 5 coins
+        }
+
+        const newXP = user.xp + xpBonus;
+        const newCoins = user.coins + coinBonus;
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.json({ message: `Winner declared successfully! +${xpBonus} XP and +${coinBonus} coins`, newXP, newCoins });
     } catch (err) {
         res.status(500).json({ message: "Internal server error" });
     }
