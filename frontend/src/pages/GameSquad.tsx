@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom"; // Add this import
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import CoinFlip from "./CoinFlip";
@@ -16,6 +16,7 @@ interface GameSquad {
     max_members: number;
     wins: number;
     creator_username?: string;
+    is_featured: number; // Added for featuring squads
 }
 
 interface Tournament {
@@ -45,7 +46,7 @@ export default function GameSquad() {
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(true);
     const { user, token } = useAuth();
-    const navigate = useNavigate(); // Add this hook
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchSquads = async () => {
@@ -255,7 +256,55 @@ export default function GameSquad() {
     };
 
     const handleViewSquad = (squadId: number) => {
-        navigate(`/squad-details/${squadId}`); // Navigate to SquadDetails page
+        navigate(`/squad-details/${squadId}`);
+    };
+
+    // New function to manage squad status (open/close)
+    const handleManageSquadStatus = async (squadId: number, currentStatus: string) => {
+        if (!user || !token) {
+            setMessage("Please log in to manage squad status.");
+            return;
+        }
+        try {
+            const newStatus = currentStatus === "open" ? "closed" : "open";
+            const res = await axios.post("https://teenverse.onrender.com/api/game-squads/manage-status", {
+                email: user.email,
+                squadId,
+                newStatus
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setMessage(res.data.message);
+            setSquads(squads.map(squad =>
+                squad.id === squadId ? { ...squad, status: newStatus } : squad
+            ));
+        } catch (err) {
+            setMessage("Error managing squad status: " + (err.response?.data?.message || err.message));
+        }
+    };
+
+    // New function to feature/unfeature a squad
+    const handleFeatureSquad = async (squadId: number, isFeatured: number) => {
+        if (!user || !token) {
+            setMessage("Please log in to feature a squad.");
+            return;
+        }
+        try {
+            const feature = isFeatured ? 0 : 1; // Toggle feature status
+            const res = await axios.post("https://teenverse.onrender.com/api/game-squads/feature", {
+                email: user.email,
+                squadId,
+                feature
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setMessage(res.data.message);
+            setSquads(squads.map(squad =>
+                squad.id === squadId ? { ...squad, is_featured: feature } : squad
+            ));
+        } catch (err) {
+            setMessage("Error featuring squad: " + (err.response?.data?.message || err.message));
+        }
     };
 
     if (!user || !token) {
@@ -281,6 +330,18 @@ export default function GameSquad() {
                 <div className="max-w-4xl mx-auto">
                     <h1 className="text-3xl font-bold text-gray-800 mb-6">Game Squad</h1>
                     <p className="text-center text-green-600 mb-6">{message}</p>
+
+                    {/* Analytics Link (visible only to restorationmichael3@gmail.com) */}
+                    {user.email === "restorationmichael3@gmail.com" && (
+                        <div className="mb-6">
+                            <a
+                                href="/analytics"
+                                className="text-blue-600 hover:underline font-semibold"
+                            >
+                                View Platform Analytics
+                            </a>
+                        </div>
+                    )}
 
                     <CoinFlip />
 
@@ -324,7 +385,12 @@ export default function GameSquad() {
                                             <p className="text-gray-800 font-semibold">
                                                 #{index + 1} {squad.game_name} Squad
                                             </p>
-                                            <p className="text-gray-600">Created by: {squad.creator_username}</p>
+                                            <p className="text-gray-600">
+                                                Created by: {squad.creator_username}
+                                                {squad.creator_username === user.username && user.email === "restorationmichael3@gmail.com" && (
+                                                    <span className="ml-2 text-yellow-600 font-semibold">(Platform Creator)</span>
+                                                )}
+                                            </p>
                                             <p className="text-gray-600">Wins: {squad.wins}</p>
                                         </div>
                                     </div>
@@ -342,7 +408,12 @@ export default function GameSquad() {
                                 <div key={tournament.id} className="border-b py-4">
                                     <p className="text-gray-800 font-semibold">{tournament.title}</p>
                                     <p className="text-gray-600">Game: {tournament.game_name}</p>
-                                    <p className="text-gray-600">Created by: {tournament.creator_username} ({tournament.squad_game_name} Squad)</p>
+                                    <p className="text-gray-600">
+                                        Created by: {tournament.creator_username}
+                                        {tournament.creator_username === user.username && user.email === "restorationmichael3@gmail.com" && (
+                                            <span className="ml-2 text-yellow-600 font-semibold">(Platform Creator)</span>
+                                        )} ({tournament.squad_game_name} Squad)
+                                    </p>
                                     <p className="text-gray-600">{tournament.description}</p>
                                     <p className="text-gray-500 text-sm">Status: {tournament.status}</p>
                                     <p className="text-gray-500 text-sm">{new Date(tournament.created_at).toLocaleString()}</p>
@@ -353,6 +424,9 @@ export default function GameSquad() {
                                                 {tournament.participants.map((participant) => (
                                                     <li key={participant.id} className="text-gray-600">
                                                         {participant.game_name} Squad (Creator: {participant.username})
+                                                        {participant.username === user.username && user.email === "restorationmichael3@gmail.com" && (
+                                                            <span className="ml-2 text-yellow-600 font-semibold">(Platform Creator)</span>
+                                                        )}
                                                     </li>
                                                 ))}
                                             </ul>
@@ -412,8 +486,15 @@ export default function GameSquad() {
                         {squads.length > 0 ? (
                             squads.map((squad) => (
                                 <div key={squad.id} className="border-b py-4">
-                                    <p className="text-gray-800 font-semibold">{squad.game_name} Squad</p>
-                                    <p className="text-gray-600">Created by: {squad.username}</p>
+                                    <p className="text-gray-800 font-semibold">
+                                        {squad.game_name} Squad {squad.is_featured ? <span className="text-yellow-600 font-semibold">(Featured)</span> : ""}
+                                    </p>
+                                    <p className="text-gray-600">
+                                        Created by: {squad.username}
+                                        {squad.username === user.username && user.email === "restorationmichael3@gmail.com" && (
+                                            <span className="ml-2 text-yellow-600 font-semibold">(Platform Creator)</span>
+                                        )}
+                                    </p>
                                     <p className="text-gray-600">UID: {squad.uid}</p>
                                     <p className="text-gray-600">{squad.description}</p>
                                     <p className="text-gray-500 text-sm">Status: {squad.status}</p>
@@ -466,6 +547,23 @@ export default function GameSquad() {
                                             </div>
                                         </>
                                     )}
+                                    {/* Admin Controls: Manage Squad Status and Feature Squad (visible only to restorationmichael3@gmail.com) */}
+                                    {user.email === "restorationmichael3@gmail.com" && (
+                                        <>
+                                            <button
+                                                onClick={() => handleManageSquadStatus(squad.id, squad.status)}
+                                                className="mt-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition mr-2"
+                                            >
+                                                {squad.status === "open" ? "Close Squad" : "Open Squad"}
+                                            </button>
+                                            <button
+                                                onClick={() => handleFeatureSquad(squad.id, squad.is_featured)}
+                                                className="mt-2 bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition mr-2"
+                                            >
+                                                {squad.is_featured ? "Unfeature Squad" : "Feature Squad"}
+                                            </button>
+                                        </>
+                                    )}
                                     <button
                                         onClick={() => handleViewSquad(squad.id)}
                                         className="mt-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
@@ -482,4 +580,4 @@ export default function GameSquad() {
             </div>
         </div>
     );
-}
+    }
