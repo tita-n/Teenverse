@@ -6,6 +6,8 @@ import dotenv from "dotenv";
 import path from "path";
 import postRoutes from './routes/posts';
 import { db } from "./database";
+import http from 'http';
+import { Server } from 'socket.io';
 
 dotenv.config();
 
@@ -15,6 +17,15 @@ app.use(cors());
 
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "teenverse_secret";
+
+// Create HTTP server and integrate Socket.IO
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "http://localhost:3000", // Adjust for production
+        methods: ["GET", "POST"]
+    }
+});
 
 // Middleware to authenticate JWT token
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -55,6 +66,67 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 
+// Socket.IO setup for real-time voting
+io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
+
+    // Join a battle room for live updates
+    socket.on('join_battle', (battleId) => {
+        socket.join(`battle-${battleId}`);
+        console.log(`User ${socket.id} joined battle-${battleId}`);
+    });
+
+    // Leave a battle room
+    socket.on('leave_battle', (battleId) => {
+        socket.leave(`battle-${battleId}`);
+        console.log(`User ${socket.id} left battle-${battleId}`);
+    });
+
+    // Broadcast vote updates
+    socket.on('vote_battle', async (data) => {
+        const { battleId, voteFor } = data;
+        try {
+            const battle = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (voteFor === "creator") {
+                await new Promise<void>((resolve, reject) => {
+                    db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            } else {
+                await new Promise<void>((resolve, reject) => {
+                    db.run("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            }
+
+            const updatedBattle = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            io.to(`battle-${battleId}`).emit('vote_update', updatedBattle);
+        } catch (err) {
+            console.error("Vote broadcast error:", err);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+    });
+});
+
 // Endpoint to fetch rants
 app.get("/api/rants", authenticateToken, async (req: express.Request, res: express.Response) => {
     try {
@@ -69,9 +141,8 @@ app.get("/api/rants", authenticateToken, async (req: express.Request, res: expre
             );
         });
 
-        // Always set username to "Anonymous" for rants
         const modifiedRants = rants.map((rant) => {
-            console.log(`Rant ID ${rant.id}: actual_username=${rant.actual_username}`); // Debug
+            console.log(`Rant ID ${rant.id}: actual_username=${rant.actual_username}`);
             return { ...rant, username: "Anonymous" };
         });
 
@@ -204,7 +275,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
 
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        const postMode = mode || "main"; // Use the provided mode (e.g., "rant"), default to "main"
+        const postMode = mode || "main";
         console.log(`[${new Date().toISOString()}] Creating post for user ${user.username}: mode=${postMode}, content=${content}`);
 
         await new Promise<void>((resolve, reject) => {
@@ -218,14 +289,12 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
             );
         });
 
-        // Standard XP and coins
         let xpBonus = 5;
         let coinBonus = 5;
 
-        // Bonus for platform creator
         if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5; // Extra 5 XP
-            coinBonus += 5; // Extra 5 coins
+            xpBonus += 5;
+            coinBonus += 5;
         }
 
         const newXP = user.xp + xpBonus;
@@ -540,7 +609,6 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
             );
         });
 
-        // Add the creator as a member
         await new Promise<void>((resolve, reject) => {
             db.run(
                 "INSERT INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)",
@@ -555,12 +623,11 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
             );
         });
 
-        // Bonus XP and coins for creating a squad (with extra for platform creator)
-        let xpBonus = 10; // Standard bonus
-        let coinBonus = 10; // Standard bonus
+        let xpBonus = 10;
+        let coinBonus = 10;
         if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5; // Extra 5 XP
-            coinBonus += 5; // Extra 5 coins
+            xpBonus += 5;
+            coinBonus += 5;
         }
 
         const newXP = user.xp + xpBonus;
@@ -580,7 +647,6 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
     }
 });
 
-// Join a game squad
 app.post("/api/game-squads/join", authenticateToken, async (req, res) => {
     try {
         const { email, squadId } = req.body;
@@ -645,12 +711,10 @@ app.post("/api/game-squads/join", authenticateToken, async (req, res) => {
     }
 });
 
-// Manage game squad status (admin-only for restorationmichael3@gmail.com)
 app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) => {
     try {
         const { email, squadId, newStatus } = req.body;
 
-        // Check if the user is the platform creator
         if (email !== "restorationmichael3@gmail.com") {
             return res.status(403).json({ message: "Only the platform creator can manage squad status" });
         }
@@ -659,12 +723,10 @@ app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) =
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        // Validate newStatus
         if (!["open", "closed"].includes(newStatus)) {
             return res.status(400).json({ message: "Invalid status. Must be 'open' or 'closed'." });
         }
 
-        // Check if the squad exists
         const squad: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM game_squads WHERE id = ?", [squadId], (err, row) => {
                 if (err) reject(err);
@@ -674,7 +736,6 @@ app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) =
 
         if (!squad) return res.status(404).json({ message: "Squad not found" });
 
-        // Update the squad's status
         await new Promise<void>((resolve, reject) => {
             db.run(
                 "UPDATE game_squads SET status = ? WHERE id = ?",
@@ -693,12 +754,10 @@ app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) =
     }
 });
 
-// Feature a game squad (admin-only for restorationmichael3@gmail.com)
 app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
     try {
         const { email, squadId, feature } = req.body;
 
-        // Check if the user is the platform creator
         if (email !== "restorationmichael3@gmail.com") {
             return res.status(403).json({ message: "Only the platform creator can feature squads" });
         }
@@ -707,10 +766,8 @@ app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        // Validate feature value
         const isFeatured = feature ? 1 : 0;
 
-        // Check if the squad exists
         const squad: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM game_squads WHERE id = ?", [squadId], (err, row) => {
                 if (err) reject(err);
@@ -720,7 +777,6 @@ app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
 
         if (!squad) return res.status(404).json({ message: "Squad not found" });
 
-        // Update the squad's is_featured status
         await new Promise<void>((resolve, reject) => {
             db.run(
                 "UPDATE game_squads SET is_featured = ? WHERE id = ?",
@@ -739,7 +795,6 @@ app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
     }
 });
 
-// Get game squad leaderboard
 app.get("/api/game-squads/leaderboard", authenticateToken, async (req, res) => {
     try {
         const leaderboard: any[] = await new Promise<any[]>((resolve, reject) => {
@@ -759,7 +814,6 @@ app.get("/api/game-squads/leaderboard", authenticateToken, async (req, res) => {
     }
 });
 
-// Report a win for a game squad (only the creator can report)
 app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
     try {
         const { email, squadId } = req.body;
@@ -793,12 +847,11 @@ app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
             });
         });
 
-        // Bonus XP and coins for reporting a win (with extra for platform creator)
-        let xpBonus = 5; // Standard bonus
-        let coinBonus = 5; // Standard bonus
+        let xpBonus = 5;
+        let coinBonus = 5;
         if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5; // Extra 5 XP
-            coinBonus += 5; // Extra 5 coins
+            xpBonus += 5;
+            coinBonus += 5;
         }
 
         const newXP = user.xp + xpBonus;
@@ -817,17 +870,14 @@ app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
     }
 });
 
-// Platform analytics (admin-only for restorationmichael3@gmail.com)
 app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
     try {
         const { email } = req.user;
 
-        // Check if the user is the platform creator
         if (email !== "restorationmichael3@gmail.com") {
             return res.status(403).json({ message: "Only the platform creator can access analytics" });
         }
 
-        // Total number of users
         const totalUsers: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
                 if (err) reject(err);
@@ -835,7 +885,6 @@ app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
             });
         });
 
-        // Total number of game squads
         const totalSquads: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT COUNT(*) as count FROM game_squads", [], (err, row) => {
                 if (err) reject(err);
@@ -843,7 +892,6 @@ app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
             });
         });
 
-        // Total number of posts
         const totalPosts: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT COUNT(*) as count FROM posts", [], (err, row) => {
                 if (err) reject(err);
@@ -851,7 +899,6 @@ app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
             });
         });
 
-        // Most popular games (based on game_squads)
         const popularGames: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
                 "SELECT game_name, COUNT(*) as count FROM game_squads GROUP BY game_name ORDER BY count DESC LIMIT 5",
@@ -875,7 +922,6 @@ app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
     }
 });
 
-// Create a tournament
 app.post("/api/tournaments", authenticateToken, async (req, res) => {
     try {
         const { email, squadId, title, description, gameName } = req.body;
@@ -919,7 +965,6 @@ app.post("/api/tournaments", authenticateToken, async (req, res) => {
     }
 });
 
-// Join a tournament
 app.post("/api/tournaments/join", authenticateToken, async (req, res) => {
     try {
         const { email, tournamentId, squadId } = req.body;
@@ -979,7 +1024,6 @@ app.post("/api/tournaments/join", authenticateToken, async (req, res) => {
     }
 });
 
-// Declare a tournament winner
 app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) => {
     try {
         const { email, tournamentId, winnerId } = req.body;
@@ -1024,7 +1068,6 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
 
         if (!participant && winnerId !== tournament.squad_id) return res.status(400).json({ message: "Winner must be a participant in the tournament" });
 
-        // Update tournament status and winner
         await new Promise<void>((resolve, reject) => {
             db.run("UPDATE tournaments SET status = 'completed', winner_id = ? WHERE id = ?", [winnerId, tournamentId], (err) => {
                 if (err) reject(err);
@@ -1032,7 +1075,6 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
             });
         });
 
-        // Increment wins for the winning squad
         await new Promise<void>((resolve, reject) => {
             db.run("UPDATE game_squads SET wins = wins + 1 WHERE id = ?", [winnerId], (err) => {
                 if (err) reject(err);
@@ -1040,12 +1082,11 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
             });
         });
 
-        // Bonus XP and coins for declaring a winner (with extra for platform creator)
-        let xpBonus = 5; // Standard bonus
-        let coinBonus = 5; // Standard bonus
+        let xpBonus = 5;
+        let coinBonus = 5;
         if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5; // Extra 5 XP
-            coinBonus += 5; // Extra 5 coins
+            xpBonus += 5;
+            coinBonus += 5;
         }
 
         const newXP = user.xp + xpBonus;
@@ -1064,7 +1105,6 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
     }
 });
 
-// Get all tournaments
 app.get("/api/tournaments", authenticateToken, async (req, res) => {
     try {
         const tournaments: any[] = await new Promise<any[]>((resolve, reject) => {
@@ -1078,7 +1118,6 @@ app.get("/api/tournaments", authenticateToken, async (req, res) => {
             );
         });
 
-        // Fetch participants for each tournament
         for (const tournament of tournaments) {
             const participants: any[] = await new Promise<any[]>((resolve, reject) => {
                 db.all(
@@ -1099,7 +1138,6 @@ app.get("/api/tournaments", authenticateToken, async (req, res) => {
     }
 });
 
-// Upload a game clip
 app.post("/api/game-clips", authenticateToken, async (req, res) => {
     try {
         const { email, squadId, clipUrl, description } = req.body;
@@ -1149,7 +1187,6 @@ app.post("/api/game-clips", authenticateToken, async (req, res) => {
     }
 });
 
-// Get game clips for a squad
 app.get("/api/game-clips/:squadId", authenticateToken, async (req, res) => {
     try {
         const squadId = req.params.squadId;
@@ -1170,7 +1207,6 @@ app.get("/api/game-clips/:squadId", authenticateToken, async (req, res) => {
     }
 });
 
-// Send a message in a squad chat
 app.post("/api/squad-messages", authenticateToken, async (req, res) => {
     try {
         const { email, squadId, message } = req.body;
@@ -1220,13 +1256,11 @@ app.post("/api/squad-messages", authenticateToken, async (req, res) => {
     }
 });
 
-// Get messages for a squad chat (with membership check)
 app.get("/api/squad-messages/:squadId", authenticateToken, async (req: any, res) => {
     try {
         const { squadId } = req.params;
         const userId = req.user.id;
 
-        // Check if the user is a member of the squad
         const membership = await new Promise<any>((resolve, reject) => {
             db.get(
                 "SELECT * FROM squad_members WHERE squad_id = ? AND user_id = ?",
@@ -1242,7 +1276,6 @@ app.get("/api/squad-messages/:squadId", authenticateToken, async (req: any, res)
             return res.status(403).json({ message: "You are not a member of this squad" });
         }
 
-        // Fetch messages for the squad
         const messages = await new Promise<any[]>((resolve, reject) => {
             db.all(
                 "SELECT sm.*, u.username FROM squad_messages sm JOIN users u ON sm.user_id = u.id WHERE sm.squad_id = ? ORDER BY sm.created_at ASC",
@@ -1261,18 +1294,142 @@ app.get("/api/squad-messages/:squadId", authenticateToken, async (req: any, res)
     }
 });
 
-// Hype Battles endpoints
-app.get("/api/hype-battles", authenticateToken, async (req, res) => {
+// Team Endpoints for Hype Battles
+app.post("/api/teams", authenticateToken, async (req, res) => {
     try {
-        const battles: any[] = await new Promise<any[]>((resolve, reject) => {
+        const { email, name } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const team = await new Promise<any>((resolve, reject) => {
+            db.run(
+                "INSERT INTO teams (name, creator_id) VALUES (?, ?)",
+                [name, user.id],
+                function (err) {
+                    if (err) reject(err);
+                    resolve({ id: this.lastID });
+                }
+            );
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO team_members (team_id, user_id) VALUES (?, ?)",
+                [team.id, user.id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Team created!", teamId: team.id });
+    } catch (err) {
+        console.error("Create team error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.post("/api/teams/join", authenticateToken, async (req, res) => {
+    try {
+        const { email, teamId } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const alreadyMember = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM team_members WHERE team_id = ? AND user_id = ?",
+                [teamId, user.id],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (alreadyMember) return res.status(400).json({ message: "Already a member of this team" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO team_members (team_id, user_id) VALUES (?, ?)",
+                [teamId, user.id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Joined team successfully!" });
+    } catch (err) {
+        console.error("Join team error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.get("/api/teams", authenticateToken, async (req, res) => {
+    try {
+        const teams = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0 ORDER BY h.created_at DESC",
+                "SELECT t.*, u.username as creator_username FROM teams t JOIN users u ON t.creator_id = u.id",
                 [],
                 (err, rows) => {
                     if (err) reject(err);
                     resolve(rows);
                 }
             );
+        });
+
+        res.json(teams);
+    } catch (err) {
+        console.error("Get teams error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Hype Battles Endpoints
+app.get("/api/hype-battles", authenticateToken, async (req, res) => {
+    try {
+        const { category, isLive } = req.query;
+        let query = "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0";
+        const params = [];
+
+        if (category) {
+            query += " AND h.category = ?";
+            params.push(category);
+        }
+        if (isLive) {
+            query += " AND h.is_live = ?";
+            params.push(isLive === "true" ? 1 : 0);
+        }
+
+        query += " ORDER BY h.created_at DESC";
+
+        const battles = await new Promise<any[]>((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
         });
 
         console.log(`[${new Date().toISOString()}] /api/hype-battles returned ${battles.length} battles`);
@@ -1285,12 +1442,12 @@ app.get("/api/hype-battles", authenticateToken, async (req, res) => {
 
 app.post("/api/hype-battle", authenticateToken, async (req, res) => {
     try {
-        const { email, content } = req.body;
+        const { email, category, content, mediaUrl, opponentId, teamId, opponentTeamId, isLive } = req.body;
         if (req.user.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        const user: any = await new Promise<any>((resolve, reject) => {
+        const user = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
@@ -1299,31 +1456,68 @@ app.post("/api/hype-battle", authenticateToken, async (req, res) => {
 
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        await new Promise<void>((resolve, reject) => {
-            db.run(
-                "INSERT INTO hype_battles (user_id, username, content, votes) VALUES (?, ?, ?, ?)",
-                [user.id, user.username, content, 0],
-                (err) => {
+        const validCategories = ["Rap Battle", "Dance-off", "Meme Creation", "Artistic Speed Drawing", "Beat-making Face-off"];
+        if (!validCategories.includes(category)) {
+            return res.status(400).json({ message: "Invalid battle category" });
+        }
+
+        if (opponentId) {
+            const opponent = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT id FROM users WHERE id = ?", [opponentId], (err, row) => {
                     if (err) reject(err);
-                    resolve();
+                    resolve(row);
+                });
+            });
+            if (!opponent) return res.status(404).json({ message: "Opponent not found" });
+        }
+
+        if (teamId) {
+            const team = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT id FROM teams WHERE id = ?", [teamId], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+            if (!team) return res.status(404).json({ message: "Team not found" });
+        }
+        if (opponentTeamId) {
+            const opponentTeam = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT id FROM teams WHERE id = ?", [opponentTeamId], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+            if (!opponentTeam) return res.status(404).json({ message: "Opponent team not found" });
+        }
+
+        const votingDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        const battle = await new Promise<any>((resolve, reject) => {
+            db.run(
+                "INSERT INTO hype_battles (user_id, username, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [user.id, user.username, opponentId || null, teamId || null, opponentTeamId || null, category, content, mediaUrl, isLive ? 1 : 0, votingDeadline],
+                function (err) {
+                    if (err) reject(err);
+                    resolve({ id: this.lastID });
                 }
             );
         });
-        res.json({ message: "Battle post created!" });
+
+        res.json({ message: "Battle created!", battleId: battle.id });
     } catch (err) {
-        console.error("Hype battle error:", err);
+        console.error("Create hype battle error:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
 
-app.post("/api/vote-battle", authenticateToken, async (req, res) => {
+app.post("/api/hype-battle/respond", authenticateToken, async (req, res) => {
     try {
-        const { email, battleId } = req.body;
+        const { email, battleId, content, mediaUrl } = req.body;
         if (req.user.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        const user: any = await new Promise<any>((resolve, reject) => {
+        const user = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
@@ -1332,12 +1526,66 @@ app.post("/api/vote-battle", authenticateToken, async (req, res) => {
 
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        const userId = user.id;
+        const battle = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT opponent_id, closed FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
 
-        const existingVote: any = await new Promise<any>((resolve, reject) => {
+        if (!battle) return res.status(404).json({ message: "Battle not found" });
+        if (battle.closed) return res.status(400).json({ message: "Battle is closed" });
+        if (battle.opponent_id !== user.id) return res.status(403).json({ message: "You are not the opponent for this battle" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "UPDATE hype_battles SET content = ?, media_url = ? WHERE id = ?",
+                [content, mediaUrl, battleId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Response submitted!" });
+    } catch (err) {
+        console.error("Respond to hype battle error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.post("/api/vote-battle", authenticateToken, async (req, res) => {
+    try {
+        const { email, battleId, voteFor } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const battle = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT closed, voting_deadline FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!battle) return res.status(404).json({ message: "Battle not found" });
+        if (battle.closed) return res.status(400).json({ message: "Battle is closed" });
+        if (new Date(battle.voting_deadline) < new Date()) return res.status(400).json({ message: "Voting has ended" });
+
+        const existingVote = await new Promise<any>((resolve, reject) => {
             db.get(
                 "SELECT id FROM battle_votes WHERE user_id = ? AND battle_id = ?",
-                [userId, battleId],
+                [user.id, battleId],
                 (err, row) => {
                     if (err) reject(err);
                     resolve(row);
@@ -1345,23 +1593,38 @@ app.post("/api/vote-battle", authenticateToken, async (req, res) => {
             );
         });
 
-        if (existingVote) {
-            return res.status(400).json({ message: "You already voted for this battle!" });
+        if (existingVote) return res.status(400).json({ message: "You already voted for this battle!" });
+
+        if (!["creator", "opponent"].includes(voteFor)) {
+            return res.status(400).json({ message: "Invalid vote target" });
         }
 
         await new Promise<void>((resolve, reject) => {
-            db.run("INSERT INTO battle_votes (user_id, battle_id) VALUES (?, ?)", [userId, battleId], (err) => {
-                if (err) reject(err);
-                resolve();
-            });
+            db.run(
+                "INSERT INTO battle_votes (user_id, battle_id, vote_for) VALUES (?, ?, ?)",
+                [user.id, battleId, voteFor],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
         });
 
-        await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
-                if (err) reject(err);
-                resolve();
+        if (voteFor === "creator") {
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
             });
-        });
+        } else {
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+        }
 
         res.json({ message: "Vote cast successfully!" });
     } catch (err) {
@@ -1372,9 +1635,9 @@ app.post("/api/vote-battle", authenticateToken, async (req, res) => {
 
 app.get("/api/determine-winners", authenticateToken, async (req, res) => {
     try {
-        const battles: any[] = await new Promise<any[]>((resolve, reject) => {
+        const battles = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT id, user_id, votes FROM hype_battles WHERE created_at < DATETIME('now', '-1 day') AND closed = 0",
+                "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < DATETIME('now') AND closed = 0",
                 [],
                 (err, rows) => {
                     if (err) reject(err);
@@ -1384,31 +1647,110 @@ app.get("/api/determine-winners", authenticateToken, async (req, res) => {
         });
 
         for (const battle of battles) {
-            const winnerId = battle.user_id;
+            let winnerId = null;
+            let loserId = null;
+            let winnerTeamId = null;
+            let loserTeamId = null;
+
+            if (battle.votes > battle.opponent_votes) {
+                winnerId = battle.user_id;
+                loserId = battle.opponent_id;
+                winnerTeamId = battle.team_id;
+                loserTeamId = battle.opponent_team_id;
+            } else if (battle.opponent_votes > battle.votes) {
+                winnerId = battle.opponent_id;
+                loserId = battle.user_id;
+                winnerTeamId = battle.opponent_team_id;
+                loserTeamId = battle.team_id;
+            }
+
             await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE users SET coins = coins + 50 WHERE id = ?", [winnerId], (err) => {
+                db.run(
+                    "UPDATE hype_battles SET closed = 1, winner_id = ? WHERE id = ?",
+                    [winnerId || winnerTeamId, battle.id],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            if (winnerId) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run("UPDATE users SET coins = coins + 50, wins = wins + 1 WHERE id = ?", [winnerId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+                if (loserId) {
+                    await new Promise<void>((resolve, reject) => {
+                        db.run("UPDATE users SET losses = losses + 1 WHERE id = ?", [loserId], (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        });
+                    });
+                }
+            }
+
+            const winner = await new Promise<any>((resolve, reject) => {
+                db.get("SELECT tier, wins, losses FROM users WHERE id = ?", [winnerId], (err, row) => {
                     if (err) reject(err);
-                    resolve();
+                    resolve(row);
                 });
             });
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE users SET title = NULL WHERE title = 'Rap King'", [], (err) => {
-                    if (err) reject(err);
-                    resolve();
+
+            if (winner) {
+                const newTier = calculateTier(winner.wins, winner.losses, winner.tier);
+                await new Promise<void>((resolve, reject) => {
+                    db.run("UPDATE users SET tier = ? WHERE id = ?", [newTier, winnerId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
                 });
-            });
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE users SET title = 'Rap King' WHERE id = ?", [winnerId], (err) => {
-                    if (err) reject(err);
-                    resolve();
+            }
+
+            if (loserId) {
+                const loser = await new Promise<any>((resolve, reject) => {
+                    db.get("SELECT tier, wins, losses FROM users WHERE id = ?", [loserId], (err, row) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    });
                 });
-            });
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE hype_battles SET closed = 1 WHERE id = ?", [battle.id], (err) => {
-                    if (err) reject(err);
-                    resolve();
+
+                if (loser) {
+                    const newTier = calculateTier(loser.wins, loser.losses, loser.tier);
+                    await new Promise<void>((resolve, reject) => {
+                        db.run("UPDATE users SET tier = ? WHERE id = ?", [newTier, loserId], (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        });
+                    });
+                }
+            }
+
+            const titleMap = {
+                "Rap Battle": "Rap King",
+                "Dance-off": "Dance Legend",
+                "Meme Creation": "Meme Master",
+                "Artistic Speed Drawing": "Art Ace",
+                "Beat-making Face-off": "Beat Boss"
+            };
+            const title = titleMap[battle.category];
+
+            if (title && winnerId) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run(`UPDATE users SET title = NULL WHERE title = ?`, [title], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
                 });
-            });
+                await new Promise<void>((resolve, reject) => {
+                    db.run(`UPDATE users SET title = ? WHERE id = ?`, [title, winnerId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            }
         }
 
         res.json({ message: "Winners determined and titles assigned!" });
@@ -1418,7 +1760,21 @@ app.get("/api/determine-winners", authenticateToken, async (req, res) => {
     }
 });
 
-// Ultimate Showdown voting endpoints
+function calculateTier(wins: number, losses: number, currentTier: number): number {
+    const winRate = wins / (wins + losses || 1);
+    let newTier = currentTier;
+
+    if (wins + losses >= 5) {
+        if (winRate >= 0.7 && newTier < 5) {
+            newTier += 1;
+        } else if (winRate < 0.3 && newTier > 1) {
+            newTier -= 1;
+        }
+    }
+
+    return newTier;
+}
+
 app.post("/api/vote-showdown", authenticateToken, async (req, res) => {
     try {
         const { email, dateOption } = req.body;
@@ -1492,7 +1848,6 @@ app.get("/api/determine-showdown-date", authenticateToken, async (req, res) => {
     }
 });
 
-// Coin Flip endpoint
 app.post("/api/coin-flip", authenticateToken, async (req, res) => {
     try {
         const { email, betAmount } = req.body;
@@ -1551,7 +1906,6 @@ app.post("/api/coin-flip", authenticateToken, async (req, res) => {
     }
 });
 
-// Hall of Fame endpoint
 app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     try {
         const rankings: any[] = await new Promise<any[]>((resolve, reject) => {
@@ -1573,7 +1927,6 @@ app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     }
 });
 
-// Track like endpoint (for Hall of Fame)
 app.post("/api/track-like", authenticateToken, async (req, res) => {
     try {
         const { email, postId } = req.body;
@@ -1588,72 +1941,55 @@ app.post("/api/track-like", authenticateToken, async (req, res) => {
             });
         });
 
-        if (!user) return res.status(404).json({ message: "User not found" });
+        if (!user) return res.status(404).json({ message: "User not found});
+const userId = user.id;
 
-        const userId = user.id;
-
-        await new Promise<void>((resolve, reject) => {
-            db.run("INSERT INTO likes (user_id, post_id) VALUES (?, ?)", [userId, postId], (err) => {
+        const existingLike: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
                 if (err) reject(err);
-                resolve();
+                resolve(row);
             });
         });
 
-        const result: any = await new Promise<any>((resolve, reject) => {
-            db.get(
-                "SELECT COUNT(*) as count FROM likes WHERE post_id = ? AND created_at >= datetime('now', '-1 day')",
-                [postId],
-                (err, row) => {
+        if (existingLike) {
+            return res.status(400).json({ message: "Already liked this post" });
+        }
+
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT user_id FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!post) return res.status(404).json({ message: "Post not found" });
+
+        const postOwnerId = post.user_id;
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO hall_of_fame (user_id, post_id, total_likes) VALUES (?, ?, 1) ON CONFLICT(user_id) DO UPDATE SET total_likes = total_likes + 1",
+                [postOwnerId, postId],
+                (err) => {
                     if (err) reject(err);
-                    resolve(row);
+                    resolve();
                 }
             );
         });
-        const count = result.count;
 
-        if (count >= 50) {
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE users SET coins = coins + 100 WHERE id = ?", [userId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-            await new Promise<void>((resolve, reject) => {
-                db.run(
-                    "INSERT INTO hall_of_fame (user_id, total_likes) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET total_likes = total_likes + ?",
-                    [userId, count, count],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
-            });
-        }
-
-        res.json({ message: "Like recorded", currentLikes: count });
+        res.json({ message: "Like tracked for Hall of Fame" });
     } catch (err) {
         console.error("Track like error:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
 
-// Catch-all route for SPA (must be at the end)
-app.get('*', (req, res) => {
-    // Only return 404 for /api/* routes that aren't matched
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ message: "API endpoint not found" });
-    }
-    // Serve index.html for all other routes (client-side routing)
-    res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
+// Catch-all route to serve the frontend
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Extend Express Request interface to include user
-declare global {
-    namespace Express {
-        interface Request {
-            user?: { email: string, verified: number, id?: number };
-        }
-    }
-                              }
+// Start the server
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
