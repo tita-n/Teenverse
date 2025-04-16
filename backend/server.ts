@@ -1927,6 +1927,8 @@ app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     }
 });
 
+// Correcting the problematic section starting from line 1944
+
 app.post("/api/track-like", authenticateToken, async (req, res) => {
     try {
         const { email, postId } = req.body;
@@ -1941,8 +1943,9 @@ app.post("/api/track-like", authenticateToken, async (req, res) => {
             });
         });
 
-        if (!user) return res.status(404).json({ message: "User not found});
-const userId = user.id;
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const userId = user.id;
 
         const existingLike: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
@@ -1968,7 +1971,8 @@ const userId = user.id;
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO hall_of_fame (user_id, post_id, total_likes) VALUES (?, ?, 1) ON CONFLICT(user_id) DO UPDATE SET total_likes = total_likes + 1",
+                "INSERT INTO hall_of_fame (user_id, post_id, total_likes) VALUES (?, ?, 1) " +
+                "ON CONFLICT(user_id) DO UPDATE SET total_likes = total_likes + 1",
                 [postOwnerId, postId],
                 (err) => {
                     if (err) reject(err);
