@@ -1848,6 +1848,300 @@ app.get("/api/determine-showdown-date", authenticateToken, async (req, res) => {
     }
 });
 
+// New interfaces for Ultimate Showdown
+interface ShowdownParticipant {
+    userId: number;
+    username: string;
+    wins: number;
+    tier: number;
+    status: string;
+    bracketPosition?: number;
+}
+
+interface BracketMatch {
+    id: number;
+    participant1: ShowdownParticipant;
+    participant2: ShowdownParticipant | null;
+    winnerId?: number;
+    round: number;
+}
+
+// Add to the existing global namespace declaration (move it to types/express.d.ts later)
+declare global {
+    namespace Express {
+        interface Request {
+            user?: { email: string; verified: number; id?: number };
+        }
+    }
+}
+
+// Existing authenticateToken middleware remains the same
+
+// New endpoints for Ultimate Showdown
+app.post("/api/ultimate-showdown/qualify", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, username, wins, tier FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Qualification: Must have won at least 3 Hype Battles
+        const battleWins: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as wins FROM hype_battles WHERE winner_id = ? AND closed = 1", [user.id], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (battleWins.wins < 3) {
+            return res.status(400).json({ message: "You need at least 3 Hype Battle wins to qualify" });
+        }
+
+        // Check if already invited
+        const existingParticipant: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT * FROM showdown_participants WHERE user_id = ?", [user.id], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (existingParticipant) {
+            return res.status(400).json({ message: "You are already invited to the Ultimate Showdown" });
+        }
+
+        // Invite user
+        const currentTournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!currentTournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO showdown_participants (tournament_id, user_id, status) VALUES (?, ?, ?)",
+                [currentTournament.id, user.id, "invited"],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "You have been invited to the Ultimate Showdown!" });
+    } catch (err) {
+        console.error("Qualify error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const currentTournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!currentTournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        const participants: ShowdownParticipant[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT sp.user_id, u.username, u.wins, u.tier, sp.status, sp.bracket_position FROM showdown_participants sp JOIN users u ON sp.user_id = u.id WHERE sp.tournament_id = ? AND sp.status = 'active'",
+                [currentTournament.id],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        // Simple bracket generation (can be enhanced with a library or algorithm)
+        const bracket: BracketMatch[] = [];
+        for (let i = 0; i < participants.length; i += 2) {
+            bracket.push({
+                id: i / 2 + 1,
+                participant1: participants[i],
+                participant2: participants[i + 1] || null,
+                round: 1,
+            });
+        }
+
+        res.json({ bracket });
+    } catch (err) {
+        console.error("Bracket error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.post("/api/ultimate-showdown/start-live", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email, tournamentId } = req.body;
+        if (req.user.email !== email || email !== "restorationmichael3@gmail.com") {
+            return res.status(403).json({ message: "Only the platform creator can start the live event" });
+        }
+
+        const tournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT status, start_date FROM showdown_tournaments WHERE id = ?", [tournamentId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!tournament) return res.status(404).json({ message: "Tournament not found" });
+        if (tournament.status !== "open") return res.status(400).json({ message: "Tournament is not open" });
+        if (new Date(tournament.start_date) > new Date()) return res.status(400).json({ message: "Tournament has not started yet" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE showdown_tournaments SET status = 'live' WHERE id = ?", [tournamentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        // Broadcast live event start
+        io.emit("showdown_live_start", { tournamentId });
+        res.json({ message: "Live event started!" });
+    } catch (err) {
+        console.error("Start live error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.post("/api/ultimate-showdown/boost", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email, tournamentId, targetUserId, coins } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, coins FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user || user.coins < coins) {
+            return res.status(400).json({ message: "Insufficient coins" });
+        }
+
+        const newCoins = user.coins - coins;
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO showdown_boosts (tournament_id, user_id, target_user_id, coins_spent) VALUES (?, ?, ?, ?)",
+                [tournamentId, user.id, targetUserId, coins],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        // Broadcast boost update
+        io.emit("showdown_boost_update", { tournamentId, targetUserId, coins });
+        res.json({ message: `Boosted ${coins} coins to user ${targetUserId}!`, newCoins });
+    } catch (err) {
+        console.error("Boost error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.post("/api/ultimate-showdown/end", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email, tournamentId, winnerId } = req.body;
+        if (req.user.email !== email || email !== "restorationmichael3@gmail.com") {
+            return res.status(403).json({ message: "Only the platform creator can end the event" });
+        }
+
+        const tournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT status FROM showdown_tournaments WHERE id = ?", [tournamentId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!tournament) return res.status(404).json({ message: "Tournament not found" });
+        if (tournament.status !== "live") return res.status(400).json({ message: "Tournament is not live" });
+
+        // Determine winner based on votes and boosts (simplified logic)
+        const votes: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT SUM(coins_spent) as totalBoosts FROM showdown_boosts WHERE tournament_id = ? AND target_user_id = ?", [tournamentId, winnerId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        const totalBoosts = votes.totalBoosts || 0;
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE showdown_tournaments SET status = 'completed', winner_id = ? WHERE id = ?", [winnerId, tournamentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        // Award rewards
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO profile_borders (user_id, border_style) VALUES (?, ?)",
+                [winnerId, "LegendaryGold"],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET coins = coins + 1000, legend_status = 'Ultimate Champion' WHERE id = ?", [winnerId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO hall_of_fame (user_id, tournament_id, rank) VALUES (?, ?, 1)",
+                [winnerId, tournamentId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        io.emit("showdown_end", { tournamentId, winnerId });
+        res.json({ message: "Ultimate Showdown completed! Winner rewarded." });
+    } catch (err) {
+        console.error("End showdown error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+
 app.post("/api/coin-flip", authenticateToken, async (req, res) => {
     try {
         const { email, betAmount } = req.body;
