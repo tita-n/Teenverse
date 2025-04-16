@@ -1997,3 +1997,11 @@ app.get("*", (req, res) => {
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+// Express route to catch users
+declare global {
+    namespace Express {
+        interface Request {
+            user?: { email: string; verified: number; id?: number };
+        }
+    }
+}
