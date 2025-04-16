@@ -252,6 +252,82 @@ db.serialize(() => {
         )
     `);
 
+    // Showdown Tournaments table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS showdown_tournaments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season TEXT,
+      status TEXT,
+      start_date TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Showdown Participants table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS showdown_participants (
+      tournament_id INTEGER,
+      user_id INTEGER,
+      status TEXT,
+      bracket_position INTEGER,
+      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      PRIMARY KEY (tournament_id, user_id)
+    )
+  `);
+
+  // Showdown Boosts table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS showdown_boosts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tournament_id INTEGER,
+      battle_id INTEGER,
+      user_id INTEGER,
+      target_user_id INTEGER,
+      coins_spent INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
+      FOREIGN KEY (battle_id) REFERENCES hype_battles(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (target_user_id) REFERENCES users(id)
+    )
+  `);
+
+  // Profile Borders table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS profile_borders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      border_style TEXT,
+      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  // Update Hall of Fame table
+  db.run(`DROP TABLE IF EXISTS hall_of_fame`);
+  db.run(`
+    CREATE TABLE hall_of_fame (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      tournament_id INTEGER,
+      rank INTEGER,
+      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id)
+    )
+  `);
+
+  // Update users table to add legend_status
+  db.run(`
+    ALTER TABLE users ADD COLUMN legend_status TEXT DEFAULT ''
+  `);
+
+  // Update hype_battles table to add tournament_id
+  db.run(`
+    ALTER TABLE hype_battles ADD COLUMN tournament_id INTEGER REFERENCES showdown_tournaments(id)
+  `);
+
     // Hall of Fame table
     db.run(`
         CREATE TABLE IF NOT EXISTS hall_of_fame (
