@@ -340,6 +340,28 @@ db.serialize(() => {
     `);
 });
 
+// Add indices for performance
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
+
+    // Ensure showdown_tournaments has a winner_id column
+    db.run("ALTER TABLE showdown_tournaments ADD COLUMN winner_id INTEGER REFERENCES users(id)");
+
+    // Initial setup for the next Ultimate Showdown (e.g., monthly)
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    db.run(
+        "INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)",
+        [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]],
+        (err) => {
+            if (err) console.error("Error initializing showdown tournament:", err);
+        }
+    );
+});
+
 // Close database on process exit
 process.on("SIGINT", () => {
     db.close((err) => {
