@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import io from "socket.io-client";
+import Navigation from "../components/Navigation";
 
 const socket = io("http://localhost:5000"); // Adjust for production
 
@@ -93,66 +94,95 @@ export default function UltimateShowdown() {
         }
     };
 
+    if (!user || !token) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center text-red-500 text-xl">
+                    Please log in to access Ultimate Showdown.
+                    <div className="mt-4 text-gray-800">
+                        Debug: user={JSON.stringify(user)}, token={token ? "Present" : "Missing"}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Ultimate Showdown</h2>
-            {message && <p className="mt-4 text-gray-600">{message}</p>}
+        <div>
+            <Navigation />
+            <div className="min-h-screen bg-gray-100 p-6">
+                <div className="max-w-4xl mx-auto">
+                    <h1 className="text-3xl font-bold text-gray-800 mb-6">Ultimate Showdown</h1>
+                    {message && <p className="text-center text-green-600 mb-6">{message}</p>}
 
-            {/* Invitation Status */}
-            <p>Invitation Status: {message.includes("invited") ? "Invited!" : "Not Qualified"}</p>
+                    {/* Invitation Status */}
+                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Your Invitation Status</h2>
+                        <p>{message.includes("invited") ? "Invited! You're eligible to participate." : "Not Qualified. Win 3+ Hype Battles to qualify."}</p>
+                    </div>
 
-            {/* Bracket Visualization */}
-            <h3 className="text-lg font-medium mt-4">Bracket</h3>
-            {bracket.map((match) => (
-                <div key={match.id} className="border p-2 mb-2">
-                    {match.participant1.username} vs {match.participant2?.username || "TBD"}
+                    {/* Bracket Visualization */}
+                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Tournament Bracket</h2>
+                        {bracket.length > 0 ? (
+                            bracket.map((match) => (
+                                <div key={match.id} className="border p-2 mb-2">
+                                    {match.participant1.username} vs {match.participant2?.username || "TBD"}
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-gray-600">Bracket not available yet.</p>
+                        )}
+                    </div>
+
+                    {/* Live Event */}
+                    {liveStatus && (
+                        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Live Event</h2>
+                            <p className="text-gray-600 mb-4">Event is live! Boost your favorite performer.</p>
+                            <select
+                                value={boostTarget || ""}
+                                onChange={(e) => setBoostTarget(parseInt(e.target.value))}
+                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                            >
+                                <option value="">Select a performer</option>
+                                {bracket.map((match) => (
+                                    <option key={match.participant1.userId} value={match.participant1.userId}>
+                                        {match.participant1.username}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={submitBoost}
+                                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
+                                disabled={coins <= 0}
+                            >
+                                Boost ({coins} coins)
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Date Voting */}
+                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Vote for Next Date</h2>
+                        <select
+                            value={vote}
+                            onChange={(e) => setVote(e.target.value)}
+                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                        >
+                            <option value="">Select a date</option>
+                            <option value="Next Saturday">Next Saturday</option>
+                            <option value="Next Sunday">Next Sunday</option>
+                        </select>
+                        <button
+                            onClick={submitVote}
+                            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
+                        >
+                            Vote
+                        </button>
+                    </div>
                 </div>
-            ))}
-
-            {/* Live Event */}
-            {liveStatus && (
-                <div className="mt-4">
-                    <h3 className="text-lg font-medium">Live Event</h3>
-                    <p>Event is live! Boost your favorite performer.</p>
-                    <select
-                        value={boostTarget || ""}
-                        onChange={(e) => setBoostTarget(parseInt(e.target.value))}
-                        className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
-                    >
-                        <option value="">Select a performer</option>
-                        {bracket.map((match) => (
-                            <option key={match.participant1.userId} value={match.participant1.userId}>
-                                {match.participant1.username}
-                            </option>
-                        ))}
-                    </select>
-                    <button
-                        onClick={submitBoost}
-                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-                        disabled={coins <= 0}
-                    >
-                        Boost ({coins} coins)
-                    </button>
-                </div>
-            )}
-
-            {/* Date Voting (existing feature) */}
-            <h3 className="text-lg font-medium mt-4">Vote for Next Date</h3>
-            <select
-                value={vote}
-                onChange={(e) => setVote(e.target.value)}
-                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
-            >
-                <option value="">Select a date</option>
-                <option value="Next Saturday">Next Saturday</option>
-                <option value="Next Sunday">Next Sunday</option>
-            </select>
-            <button
-                onClick={submitVote}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-            >
-                Vote
-            </button>
+            </div>
         </div>
     );
-            }
+                            }
