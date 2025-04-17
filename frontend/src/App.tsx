@@ -32,7 +32,7 @@ export default function App() {
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
                     <Route path="/hype-battles" element={<HypeBattles />} />
-                    <Route path="/ultimate-showdown" element={<UltimateShowdowm />} />
+                    <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
                     <Route path="/clout-missions" element={<CloutMissions />} />
                     <Route path="/hall-of-fame" element={<HallOfFame />} />
                     <Route path="/create-post" element={<CreatePost />} />
