@@ -3,14 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
 export default function Navigation() {
-    const [isOpen, setIsOpen] = useState(false); // State to toggle mobile menu
+    const [isOpen, setIsOpen] = useState(false);
     const { user, logout } = useAuth();
     const navigate = useNavigate();
 
     const handleLogout = () => {
         logout();
         navigate("/");
-        setIsOpen(false); // Close mobile menu on logout
+        setIsOpen(false);
     };
 
     return (
@@ -42,7 +42,7 @@ export default function Navigation() {
                                 HYPE Battles
                             </Link>
                             <Link to="/ultimate-showdown" className="text-white hover:text-indigo-200">
-                                Ultimate Showdown 
+                                Ultimate Showdown
                             </Link>
                             <Link to="/clout-missions" className="text-white hover:text-indigo-200">
                                 Clout Missions
@@ -144,6 +144,13 @@ export default function Navigation() {
                                     HYPE Battles
                                 </Link>
                                 <Link
+                                    to="/ultimate-showdown"
+                                    className="text-white hover:text-indigo-200 px-3 py-1"
+                                    onClick={() => setIsOpen(false)}
+                                >
+                                    Ultimate Showdown
+                                </Link>
+                                <Link
                                     to="/clout-missions"
                                     className="text-white hover:text-indigo-200 px-3 py-1"
                                     onClick={() => setIsOpen(false)}
@@ -201,4 +208,4 @@ export default function Navigation() {
             )}
         </nav>
     );
-            }
+                                }
