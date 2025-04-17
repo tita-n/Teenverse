@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import { useSocket } from "../context/SocketContext"; // Assuming you already have this from Game Squad
+import { useSocket } from "../context/SocketContext";
 import Navigation from "../components/Navigation";
 
 interface Battle {
@@ -381,8 +381,6 @@ export default function HypeBattles() {
                         </button>
                     </div>
 
-                    <UltimateShowdown />
-
                     {/* Recent Battles */}
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4">Recent Battles</h2>
@@ -469,4 +467,4 @@ export default function HypeBattles() {
             </div>
         </div>
     );
-                }
+                       }
