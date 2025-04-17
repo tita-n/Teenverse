@@ -9,12 +9,11 @@ import Profile from "./pages/Profile";
 import NewsFeed from "./pages/NewsFeed";
 import BuyCoins from "./pages/BuyCoins";
 import HypeBattles from "./pages/HypeBattles";
-import UltimateShowdown from "./pages/UltimateShowdown";
 import CloutMissions from "./pages/CloutMissions";
 import HallOfFame from "./pages/HallOfFame";
 import CreatePost from "./pages/CreatePost";
-import Analytics from "./pages/Analytics"; // Add this import
-import Home from "./pages/Home";
+import Analytics from "./pages/Analytics";
+import UltimateShowdown from "./pages/UltimateShowdown"; // Add this import
 import { AuthProvider } from "./hooks/useAuth";
 
 export default function App() {
@@ -32,14 +31,13 @@ export default function App() {
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
                     <Route path="/hype-battles" element={<HypeBattles />} />
-                    <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
                     <Route path="/clout-missions" element={<CloutMissions />} />
                     <Route path="/hall-of-fame" element={<HallOfFame />} />
                     <Route path="/create-post" element={<CreatePost />} />
-                    <Route path="/home" element={<Home />} />
-                    <Route path="/analytics" element={<Analytics />} /> {/* Add this route */}
+                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/ultimate-showdown" element={<UltimateShowdown />} /> {/* Add this route */}
                 </Routes>
             </Router>
         </AuthProvider>
     );
-                        }
+}
