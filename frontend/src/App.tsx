@@ -9,6 +9,7 @@ import Profile from "./pages/Profile";
 import NewsFeed from "./pages/NewsFeed";
 import BuyCoins from "./pages/BuyCoins";
 import HypeBattles from "./pages/HypeBattles";
+import UltimateShowdown from "./pages/UltimateShowdown";
 import CloutMissions from "./pages/CloutMissions";
 import HallOfFame from "./pages/HallOfFame";
 import CreatePost from "./pages/CreatePost";
@@ -30,6 +31,7 @@ export default function App() {
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
                     <Route path="/hype-battles" element={<HypeBattles />} />
+                    <Route path="/ultimate-showdown" element={<UltimateShowdowm />} />
                     <Route path="/clout-missions" element={<CloutMissions />} />
                     <Route path="/hall-of-fame" element={<HallOfFame />} />
                     <Route path="/create-post" element={<CreatePost />} />
