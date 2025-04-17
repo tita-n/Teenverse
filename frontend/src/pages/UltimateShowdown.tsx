@@ -4,7 +4,11 @@ import { useAuth } from "../hooks/useAuth";
 import io from "socket.io-client";
 import Navigation from "../components/Navigation";
 
-const socket = io("http://localhost:5000"); // Adjust for production
+const socket = io("http://localhost:5000", { // Adjust for production
+    reconnection: true,
+    reconnectionAttempts: 3,
+    reconnectionDelay: 1000,
+});
 
 export default function UltimateShowdown() {
     const [vote, setVote] = useState("");
@@ -13,45 +17,70 @@ export default function UltimateShowdown() {
     const [liveStatus, setLiveStatus] = useState(false);
     const [coins, setCoins] = useState(0);
     const [boostTarget, setBoostTarget] = useState<number | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const { user, token } = useAuth();
 
     useEffect(() => {
-        if (!user || !token) return;
+        console.log("UltimateShowdown useEffect triggered", { user, token });
 
-        // Fetch invitation status
-        axios.get("/api/ultimate-showdown/qualify", {
-            headers: { Authorization: `Bearer ${token}` },
-        }).then((res) => {
-            setMessage(res.data.message);
-        }).catch((err) => {
-            setMessage(err.response?.data?.message || "Error checking qualification");
-        });
+        if (!user || !token) {
+            setLoading(false);
+            return;
+        }
 
-        // Fetch bracket
-        axios.get("/api/ultimate-showdown/bracket", {
-            headers: { Authorization: `Bearer ${token}` },
-        }).then((res) => {
-            setBracket(res.data.bracket);
-        }).catch((err) => {
-            setMessage(err.response?.data?.message || "Error fetching bracket");
-        });
+        const fetchData = async () => {
+            try {
+                setLoading(true);
+                // Fetch invitation status
+                const qualificationRes = await axios.get("/api/ultimate-showdown/qualify", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                setMessage(qualificationRes.data.message);
 
-        // Fetch user coins
-        axios.post("/api/get-coins", { email: user.email }, {
-            headers: { Authorization: `Bearer ${token}` },
-        }).then((res) => {
-            setCoins(res.data.coins);
-        });
+                // Fetch bracket
+                const bracketRes = await axios.get("/api/ultimate-showdown/bracket", {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                setBracket(bracketRes.data.bracket);
+
+                // Fetch user coins
+                const coinsRes = await axios.post("/api/get-coins", { email: user.email }, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                setCoins(coinsRes.data.coins);
+
+                setError(null);
+            } catch (err) {
+                console.error("Error fetching data:", err);
+                setError(err.response?.data?.message || "Error fetching data");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
 
         // Socket listeners
-        socket.on("showdown_live_start", (data) => setLiveStatus(true));
+        socket.on("connect", () => console.log("Socket connected"));
+        socket.on("connect_error", (err) => console.error("Socket connection error:", err));
+        socket.on("showdown_live_start", (data) => {
+            console.log("Live event started:", data);
+            setLiveStatus(true);
+        });
         socket.on("showdown_boost_update", (data) => console.log("Boost update:", data));
         socket.on("showdown_end", (data) => {
+            console.log("Showdown ended:", data);
             setLiveStatus(false);
             setMessage(`Winner: User ${data.winnerId}`);
         });
 
-        return () => socket.disconnect();
+        return () => {
+            socket.off("showdown_live_start");
+            socket.off("showdown_boost_update");
+            socket.off("showdown_end");
+            socket.disconnect();
+        };
     }, [user, token]);
 
     const submitVote = async () => {
@@ -94,6 +123,14 @@ export default function UltimateShowdown() {
         }
     };
 
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center text-gray-800 text-xl">Loading...</div>
+            </div>
+        );
+    }
+
     if (!user || !token) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -102,6 +139,16 @@ export default function UltimateShowdown() {
                     <div className="mt-4 text-gray-800">
                         Debug: user={JSON.stringify(user)}, token={token ? "Present" : "Missing"}
                     </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center text-red-500 text-xl">
+                    {error}
                 </div>
             </div>
         );
@@ -185,4 +232,4 @@ export default function UltimateShowdown() {
             </div>
         </div>
     );
-                            }
+}
