@@ -14,6 +14,7 @@ import CloutMissions from "./pages/CloutMissions";
 import HallOfFame from "./pages/HallOfFame";
 import CreatePost from "./pages/CreatePost";
 import Analytics from "./pages/Analytics"; // Add this import
+import Home from "./pages/Home";
 import { AuthProvider } from "./hooks/useAuth";
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
                     <Route path="/clout-missions" element={<CloutMissions />} />
                     <Route path="/hall-of-fame" element={<HallOfFame />} />
                     <Route path="/create-post" element={<CreatePost />} />
+                    <Route path="/home" element={<Home />} />
                     <Route path="/analytics" element={<Analytics />} /> {/* Add this route */}
                 </Routes>
             </Router>
