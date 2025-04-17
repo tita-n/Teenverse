@@ -32,7 +32,8 @@ db.serialize(() => {
             tier INTEGER DEFAULT 1,
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0,
-            title TEXT
+            title TEXT,
+            legend_status TEXT DEFAULT ''
         )
     `);
 
@@ -199,11 +200,13 @@ db.serialize(() => {
             winner_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             closed INTEGER DEFAULT 0,
+            tournament_id INTEGER,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(opponent_id) REFERENCES users(id),
             FOREIGN KEY(team_id) REFERENCES teams(id),
             FOREIGN KEY(opponent_team_id) REFERENCES teams(id),
-            FOREIGN KEY(winner_id) REFERENCES users(id)
+            FOREIGN KEY(winner_id) REFERENCES users(id),
+            FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id)
         )
     `);
 
@@ -253,101 +256,77 @@ db.serialize(() => {
     `);
 
     // Showdown Tournaments table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS showdown_tournaments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      season TEXT,
-      status TEXT,
-      start_date TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Showdown Participants table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS showdown_participants (
-      tournament_id INTEGER,
-      user_id INTEGER,
-      status TEXT,
-      bracket_position INTEGER,
-      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
-      FOREIGN KEY (user_id) REFERENCES users(id),
-      PRIMARY KEY (tournament_id, user_id)
-    )
-  `);
-
-  // Showdown Boosts table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS showdown_boosts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tournament_id INTEGER,
-      battle_id INTEGER,
-      user_id INTEGER,
-      target_user_id INTEGER,
-      coins_spent INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
-      FOREIGN KEY (battle_id) REFERENCES hype_battles(id),
-      FOREIGN KEY (user_id) REFERENCES users(id),
-      FOREIGN KEY (target_user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Profile Borders table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS profile_borders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      border_style TEXT,
-      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
-
-  // Update Hall of Fame table
-  db.run(`DROP TABLE IF EXISTS hall_of_fame`);
-  db.run(`
-    CREATE TABLE hall_of_fame (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER,
-      tournament_id INTEGER,
-      rank INTEGER,
-      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id),
-      FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id)
-    )
-  `);
-
-  // Update users table to add legend_status
-  db.run(`
-    ALTER TABLE users ADD COLUMN legend_status TEXT DEFAULT ''
-  `);
-
-  // Update hype_battles table to add tournament_id
-  db.run(`
-    ALTER TABLE hype_battles ADD COLUMN tournament_id INTEGER REFERENCES showdown_tournaments(id)
-  `);
-
-    // Hall of Fame table
     db.run(`
-        CREATE TABLE IF NOT EXISTS hall_of_fame (
-            user_id INTEGER PRIMARY KEY,
-            post_id INTEGER,
-            total_likes INTEGER DEFAULT 0,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(post_id) REFERENCES posts(id)
+        CREATE TABLE IF NOT EXISTS showdown_tournaments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            season TEXT,
+            status TEXT,
+            start_date TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            winner_id INTEGER,
+            FOREIGN KEY (winner_id) REFERENCES users(id)
         )
     `);
-});
 
-// Add indices for performance
+    // Showdown Participants table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS showdown_participants (
+            tournament_id INTEGER,
+            user_id INTEGER,
+            status TEXT,
+            bracket_position INTEGER,
+            FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            PRIMARY KEY (tournament_id, user_id)
+        )
+    `);
+
+    // Showdown Boosts table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS showdown_boosts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER,
+            battle_id INTEGER,
+            user_id INTEGER,
+            target_user_id INTEGER,
+            coins_spent INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
+            FOREIGN KEY (battle_id) REFERENCES hype_battles(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (target_user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Profile Borders table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS profile_borders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            border_style TEXT,
+            awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Hall of Fame table (single definition)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS hall_of_fame (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            tournament_id INTEGER,
+            rank INTEGER,
+            awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id)
+        )
+    `);
+
+    // Add indices for performance
     db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
-
-    // Ensure showdown_tournaments has a winner_id column
-    db.run("ALTER TABLE showdown_tournaments ADD COLUMN winner_id INTEGER REFERENCES users(id)");
 
     // Initial setup for the next Ultimate Showdown (e.g., monthly)
     const nextMonth = new Date();
