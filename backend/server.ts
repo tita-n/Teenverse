@@ -1866,15 +1866,6 @@ interface BracketMatch {
     round: number;
 }
 
-// Add to the existing global namespace declaration (move it to types/express.d.ts later)
-declare global {
-    namespace Express {
-        interface Request {
-            user?: { email: string; verified: number; id?: number };
-        }
-    }
-}
-
 // Existing authenticateToken middleware remains the same
 
 // New endpoints for Ultimate Showdown
