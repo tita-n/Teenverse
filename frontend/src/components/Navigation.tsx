@@ -41,6 +41,9 @@ export default function Navigation() {
                             <Link to="/hype-battles" className="text-white hover:text-indigo-200">
                                 HYPE Battles
                             </Link>
+                            <Link to="/ultimate-showdown" className="text-white hover:text-indigo-200">
+                                Ultimate Showdown 
+                            </Link>
                             <Link to="/clout-missions" className="text-white hover:text-indigo-200">
                                 Clout Missions
                             </Link>
