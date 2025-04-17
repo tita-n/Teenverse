@@ -3,7 +3,6 @@ import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import { useSocket } from "../context/SocketContext"; // Assuming you already have this from Game Squad
 import Navigation from "../components/Navigation";
-import UltimateShowdown from "./UltimateShowdown";
 
 interface Battle {
     id: number;
