@@ -4,7 +4,8 @@ import { useAuth } from "../hooks/useAuth";
 import io from "socket.io-client";
 import Navigation from "../components/Navigation";
 
-const socket = io("http://localhost:5000", { // Adjust for production
+// Use a relative URL since backend and frontend are together
+const socket = io("/", {
     reconnection: true,
     reconnectionAttempts: 3,
     reconnectionDelay: 1000,
@@ -25,6 +26,8 @@ export default function UltimateShowdown() {
         console.log("UltimateShowdown useEffect triggered", { user, token });
 
         if (!user || !token) {
+            console.log("User or token missing, setting loading to false");
+            setError("Please log in to access Ultimate Showdown.");
             setLoading(false);
             return;
         }
@@ -32,22 +35,31 @@ export default function UltimateShowdown() {
         const fetchData = async () => {
             try {
                 setLoading(true);
-                // Fetch invitation status
-                const qualificationRes = await axios.get("/api/ultimate-showdown/qualify", {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                console.log("Fetching data for user:", user.email);
+
+                // Fix 1: Use POST for /api/ultimate-showdown/qualify and include email
+                const qualificationRes = await axios.post(
+                    "/api/ultimate-showdown/qualify",
+                    { email: user.email },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                console.log("Qualification response:", qualificationRes.data);
                 setMessage(qualificationRes.data.message);
 
-                // Fetch bracket
+                // Fix 2: Access matches instead of bracket
                 const bracketRes = await axios.get("/api/ultimate-showdown/bracket", {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                setBracket(bracketRes.data.bracket);
+                console.log("Bracket response:", bracketRes.data);
+                setBracket(bracketRes.data.matches || []); // Ensure bracket is an array
 
                 // Fetch user coins
-                const coinsRes = await axios.post("/api/get-coins", { email: user.email }, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const coinsRes = await axios.post(
+                    "/api/get-coins",
+                    { email: user.email },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                console.log("Coins response:", coinsRes.data);
                 setCoins(coinsRes.data.coins);
 
                 setError(null);
@@ -93,9 +105,11 @@ export default function UltimateShowdown() {
             return;
         }
         try {
-            await axios.post("/api/vote-showdown", { email: user.email, dateOption: vote }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/vote-showdown",
+                { email: user.email, dateOption: vote },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
             setMessage("Vote submitted successfully!");
         } catch (err) {
             setMessage("Error submitting vote: " + (err.response?.data?.message || err.message));
@@ -108,14 +122,16 @@ export default function UltimateShowdown() {
             return;
         }
         try {
-            await axios.post("/api/ultimate-showdown/boost", {
-                email: user.email,
-                tournamentId: 1, // Replace with dynamic tournament ID
-                targetUserId: boostTarget,
-                coins: Math.min(coins, 100), // Cap at 100 coins per boost
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/ultimate-showdown/boost",
+                {
+                    email: user.email,
+                    tournamentId: 1, // Replace with dynamic tournament ID
+                    targetUserId: boostTarget,
+                    coins: Math.min(coins, 100), // Cap at 100 coins per boost
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
             setCoins(coins - Math.min(coins, 100));
             setMessage("Boost submitted!");
         } catch (err) {
@@ -148,7 +164,11 @@ export default function UltimateShowdown() {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
                 <div className="text-center text-red-500 text-xl">
-                    {error}
+                    <h1 className="text-3xl font-bold text-gray-800 mb-4">Ultimate Showdown</h1>
+                    <p>{error}</p>
+                    <div className="mt-4 text-gray-800">
+                        Debug: user={JSON.stringify(user)}, token={token ? "Present" : "Missing"}
+                    </div>
                 </div>
             </div>
         );
@@ -165,7 +185,11 @@ export default function UltimateShowdown() {
                     {/* Invitation Status */}
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4">Your Invitation Status</h2>
-                        <p>{message.includes("invited") ? "Invited! You're eligible to participate." : "Not Qualified. Win 3+ Hype Battles to qualify."}</p>
+                        <p>
+                            {message.includes("qualified")
+                                ? "Qualified! You're eligible to participate."
+                                : "Not Qualified. Win 3+ Hype Battles to qualify."}
+                        </p>
                     </div>
 
                     {/* Bracket Visualization */}
@@ -232,4 +256,4 @@ export default function UltimateShowdown() {
             </div>
         </div>
     );
-                  }
+                    }
