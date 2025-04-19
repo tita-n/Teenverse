@@ -366,6 +366,79 @@ db.serialize(() => {
             UNIQUE(user_id)
         )
     `);
+// Developer Picks table (unchanged)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS developer_picks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            title TEXT,
+            awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id)
+        )
+    `);
+
+    // Add columns to users for special privileges (unchanged)
+    db.run(`
+        ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
+    `, (err) => {
+        if (err && !err.message.includes("duplicate column")) {
+            console.error("Error adding is_moderator column:", err);
+        }
+    });
+
+    db.run(`
+        ALTER TABLE users ADD COLUMN verified_status INTEGER DEFAULT 0
+    `, (err) => {
+        if (err && !err.message.includes("duplicate column")) {
+            console.error("Error adding verified_status column:", err);
+        }
+    });
+
+    db.run(`
+        ALTER TABLE users ADD COLUMN early_access INTEGER DEFAULT 0
+    `, (err) => {
+        if (err && !err.message.includes("duplicate column")) {
+            console.error("Error adding early_access column:", err);
+        }
+    });
+
+    // Add indices for performance (removed idx_rants_user)
+    db.run("CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)");
+
+    // Set the creator_badge and add to developer_picks for restorationmichael3@gmail.com (unchanged)
+    db.get(
+        "SELECT id, username FROM users WHERE email = ?",
+        ["restorationmichael3@gmail.com"],
+        (err, user: any) => {
+            if (err) {
+                console.error("Error fetching user for creator badge:", err);
+                return;
+            }
+            if (user) {
+                db.run(
+                    `UPDATE users SET creator_badge = 'Platform Creator' WHERE id = ?`,
+                    [user.id],
+                    (err) => {
+                        if (err) console.error("Error setting creator badge:", err);
+                        else console.log("Creator badge set for restorationmichael3@gmail.com");
+                    }
+                );
+
+                db.run(
+                    `INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)`,
+                    [user.id, "PrimeArchitect"],
+                    (err) => {
+                        if (err) console.error("Error adding to developer_picks:", err);
+                        else console.log(`Added ${user.username} as PrimeArchitect to developer_picks`);
+                    }
+                );
+            } else {
+                console.log("User with email restorationmichael3@gmail.com not found for creator setup");
+            }
+        }
+    );
+});
 
     // Add indices for performance
     db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
@@ -400,12 +473,3 @@ process.on("SIGINT", () => {
     });
 });
 
-// Set the creator_badge for restorationmichael3@gmail.com
-db.run(
-    `UPDATE users SET creator_badge = 'Platform Creator' WHERE email = ?`,
-    ["restorationmichael3@gmail.com"],
-    (err) => {
-        if (err) console.error("Error setting creator badge:", err);
-        else console.log("Creator badge set for restorationmichael3@gmail.com");
-    }
-);
