@@ -2559,7 +2559,7 @@ app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     try {
         const rankings: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.total_likes DESC",
+                "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.awarded_at DESC",
                 [],
                 (err, rows) => {
                     if (err) reject(err);
@@ -2620,7 +2620,7 @@ app.post("/api/track-like", authenticateToken, async (req, res) => {
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO hall_of_fame (user_id, post_id, total_likes) VALUES (?, ?, 1) " +
+                "INSERT INTO post_hall_of_fame (user_id, post_id, total_likes) VALUES (?, ?, 1) " +
                 "ON CONFLICT(user_id) DO UPDATE SET total_likes = total_likes + 1",
                 [postOwnerId, postId],
                 (err) => {
@@ -2630,7 +2630,7 @@ app.post("/api/track-like", authenticateToken, async (req, res) => {
             );
         });
 
-        res.json({ message: "Like tracked for Hall of Fame" });
+        res.json({ message: "Like tracked for Post Hall of Fame" });
     } catch (err) {
         console.error("Track like error:", err);
         res.status(500).json({ message: "Internal server error" });
