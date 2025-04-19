@@ -16,15 +16,20 @@ export default function UltimateShowdown() {
     const [clipUrl, setClipUrl] = useState(""); // For submitting a clip
     const [category, setCategory] = useState("Rap"); // Selected category for clip submission/voting
     const [message, setMessage] = useState("");
-    const [bracket, setBracket] = useState<any[]>([]); // List of participants
+    const [participants, setParticipants] = useState<any[]>([]); // List of participants (updated from bracket)
     const [clips, setClips] = useState<any[]>([]); // List of submitted clips
     const [liveStatus, setLiveStatus] = useState(false);
     const [chosenDate, setChosenDate] = useState<string | null>(null); // The voted date
     const [hasVoted, setHasVoted] = useState<{ [category: string]: boolean }>({}); // Track votes per category
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isQualified, setIsQualified] = useState(false); // For clip submission
-    const [isParticipant, setIsParticipant] = useState(false); // Check if user is in the bracket
+    const [qualificationStatus, setQualificationStatus] = useState({
+        canView: false,
+        canParticipate: false,
+        alreadyJoined: false,
+        tournamentId: null,
+        wins: 0
+    }); // Updated to store full qualification status
     const { user, token } = useAuth();
 
     // Categories for the showdown
@@ -45,15 +50,18 @@ export default function UltimateShowdown() {
                 setLoading(true);
                 console.log("Fetching data for user:", user.email);
 
-                // Check qualification status for clip submission
-                const qualificationRes = await axios.post(
-                    "/api/ultimate-showdown/qualify",
-                    { email: user.email },
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
+                // Check qualification status
+                const qualificationRes = await axios.get("/api/ultimate-showdown/qualify", {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
                 console.log("Qualification response:", qualificationRes.data);
-                setMessage(qualificationRes.data.message);
-                setIsQualified(qualificationRes.data.message.includes("qualified"));
+                setQualificationStatus({
+                    canView: qualificationRes.data.canView || false,
+                    canParticipate: qualificationRes.data.canParticipate || false,
+                    alreadyJoined: qualificationRes.data.alreadyJoined || false,
+                    tournamentId: qualificationRes.data.tournamentId || null,
+                    wins: qualificationRes.data.wins || 0
+                });
 
                 // Fetch the bracket (list of participants)
                 try {
@@ -61,21 +69,19 @@ export default function UltimateShowdown() {
                         headers: { Authorization: `Bearer ${token}` },
                     });
                     console.log("Bracket response:", bracketRes.data);
-                    setBracket(bracketRes.data.matches || []);
+                    setParticipants(bracketRes.data.participants || []);
                     // Check if the current user is a participant
-                    const userInBracket = bracketRes.data.matches.some((match: any) =>
-                        [match.participant1, match.participant2].some(
-                            (participant: any) => participant && participant.email === user.email
-                        )
+                    const userInBracket = bracketRes.data.participants.some(
+                        (participant: any) => participant.user_id === user.id
                     );
-                    setIsParticipant(userInBracket);
+                    setQualificationStatus((prev) => ({ ...prev, alreadyJoined: userInBracket }));
                 } catch (bracketErr) {
                     console.error("Bracket fetch error:", bracketErr.response?.data || bracketErr.message);
-                    setBracket([]);
-                    setMessage((prev) => prev + " | Bracket error: " + (bracketErr.response?.data?.message || "Failed to load bracket"));
+                    setParticipants([]);
+                    setMessage((prev) => prev + " | Bracket error: " + (bracketErr.response?.data?.message || "Failed to load participants"));
                 }
 
-                // Fetch the chosen date (assuming the backend provides this)
+                // Fetch the chosen date
                 try {
                     const dateRes = await axios.get("/api/showdown-date", {
                         headers: { Authorization: `Bearer ${token}` },
@@ -100,16 +106,23 @@ export default function UltimateShowdown() {
                 }
 
                 // Check if the user has already voted in each category
-                const voteStatusRes = await axios.get("/api/user-vote-status", {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                console.log("Vote status response:", voteStatusRes.data);
-                setHasVoted(voteStatusRes.data.hasVoted || {});
+                try {
+                    const voteStatusRes = await axios.get("/api/user-vote-status", {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    console.log("Vote status response:", voteStatusRes.data);
+                    setHasVoted(voteStatusRes.data.hasVoted || {});
+                } catch (voteErr) {
+                    console.error("Vote status fetch error:", voteErr.response?.data || voteErr.message);
+                    setHasVoted({});
+                }
 
                 setError(null);
             } catch (err) {
                 console.error("Error fetching data:", err);
                 setError(err.response?.data?.message || "Error fetching data");
+                // Still allow viewing even if there's an error, as long as the user is authenticated
+                setQualificationStatus((prev) => ({ ...prev, canView: true }));
             } finally {
                 setLoading(false);
             }
@@ -146,6 +159,32 @@ export default function UltimateShowdown() {
     const today = new Date().toISOString().split("T")[0]; // Format: YYYY-MM-DD
     const isShowdownDay = chosenDate && today === chosenDate;
 
+    const joinTournament = async () => {
+        if (!user || !token) {
+            setMessage("Please log in to join the tournament.");
+            return;
+        }
+        if (!qualificationStatus.canParticipate) {
+            setMessage("You need at least 3 Hype Battle wins to join the tournament.");
+            return;
+        }
+        if (qualificationStatus.alreadyJoined) {
+            setMessage("You are already a participant in the tournament.");
+            return;
+        }
+        try {
+            await axios.post(
+                "/api/ultimate-showdown/join",
+                { email: user.email, tournamentId: qualificationStatus.tournamentId },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            setMessage("Successfully joined the tournament!");
+            setQualificationStatus((prev) => ({ ...prev, alreadyJoined: true }));
+        } catch (err) {
+            setMessage("Error joining tournament: " + (err.response?.data?.message || err.message));
+        }
+    };
+
     const submitDateVote = async () => {
         if (!user || !token) {
             setMessage("Please log in to vote.");
@@ -172,6 +211,14 @@ export default function UltimateShowdown() {
             setMessage("Please log in to submit a clip.");
             return;
         }
+        if (!qualificationStatus.canParticipate) {
+            setMessage("You need at least 3 Hype Battle wins to submit a clip.");
+            return;
+        }
+        if (!qualificationStatus.alreadyJoined) {
+            setMessage("You must join the tournament to submit a clip.");
+            return;
+        }
         if (!clipUrl || !category) {
             setMessage("Please provide a clip URL and select a category.");
             return;
@@ -194,7 +241,7 @@ export default function UltimateShowdown() {
             setMessage("Please log in to vote.");
             return;
         }
-        if (isParticipant) {
+        if (qualificationStatus.alreadyJoined) {
             setMessage("Participants cannot vote in the competition.");
             return;
         }
@@ -223,7 +270,7 @@ export default function UltimateShowdown() {
         );
     }
 
-    if (error) {
+    if (!qualificationStatus.canView && error) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
                 <div className="text-center text-red-500 text-xl">
@@ -249,10 +296,20 @@ export default function UltimateShowdown() {
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4">Showdown Status</h2>
                         <p>
-                            {isQualified
-                                ? "You are qualified to participate! You can submit a clip on the showdown day."
-                                : "You are not qualified to participate, but you can vote for your favorite clips on the showdown day."}
+                            {qualificationStatus.canParticipate
+                                ? qualificationStatus.alreadyJoined
+                                    ? "You are a participant in the Ultimate Showdown! You can submit a clip on the showdown day."
+                                    : "You are eligible to participate! Join the tournament below."
+                                : `You need 3 Hype Battle wins to participate (Current wins: ${qualificationStatus.wins}). You can still vote for your favorite clips on the showdown day.`}
                         </p>
+                        {qualificationStatus.canParticipate && !qualificationStatus.alreadyJoined && (
+                            <button
+                                onClick={joinTournament}
+                                className="mt-4 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
+                            >
+                                Join Tournament
+                            </button>
+                        )}
                         {chosenDate ? (
                             <p className="text-gray-600 mt-2">
                                 Chosen Date: {chosenDate} {isShowdownDay ? "(Today!)" : ""}
@@ -265,10 +322,10 @@ export default function UltimateShowdown() {
                     {/* Participants List */}
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4">Participants</h2>
-                        {bracket.length > 0 ? (
-                            bracket.map((match) => (
-                                <div key={match.id} className="border p-2 mb-2">
-                                    {match.participant1.username} vs {match.participant2?.username || "TBD"}
+                        {participants.length > 0 ? (
+                            participants.map((participant) => (
+                                <div key={participant.user_id} className="border p-2 mb-2">
+                                    {participant.username}
                                 </div>
                             ))
                         ) : (
@@ -276,8 +333,8 @@ export default function UltimateShowdown() {
                         )}
                     </div>
 
-                    {/* Clip Submission - Only for Qualified Users on Showdown Day */}
-                    {isQualified && isShowdownDay && (
+                    {/* Clip Submission - Only for Participants on Showdown Day */}
+                    {qualificationStatus.alreadyJoined && isShowdownDay && (
                         <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                             <h2 className="text-xl font-semibold text-gray-800 mb-4">Submit Your Clip</h2>
                             <select
@@ -319,7 +376,7 @@ export default function UltimateShowdown() {
                                         {clips
                                             .filter((clip) => clip.category === cat)
                                             .map((clip) => (
-                                                <div key={clip.id} className="border p-2 mb-2 flex justify-between items-center">
+                                                <div key={clip.id} className="border两个 p-2 mb-2 flex justify-between items-center">
                                                     <div>
                                                         <p>Posted by: {clip.username}</p>
                                                         <a href={clip.url} target="_blank" rel="noopener noreferrer" className="text-blue-500">
@@ -329,9 +386,9 @@ export default function UltimateShowdown() {
                                                     <button
                                                         onClick={() => voteForClip(clip.id, clip.category)}
                                                         className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-                                                        disabled={isParticipant || hasVoted[cat]}
+                                                        disabled={qualificationStatus.alreadyJoined || hasVoted[cat]}
                                                     >
-                                                        {isParticipant
+                                                        {qualificationStatus.alreadyJoined
                                                             ? "Participants Can't Vote"
                                                             : hasVoted[cat]
                                                             ? "Already Voted"
