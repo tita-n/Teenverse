@@ -1939,8 +1939,29 @@ app.post("/api/ultimate-showdown/qualify", authenticateToken, async (req: expres
     }
 });
 
-app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express.Request, res: express.Response) => {
+app.get("/api/ultimate-showdown/qualify", authenticateToken, async (req: express.Request, res: express.Response) => {
     try {
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT * FROM users WHERE email = ?", [req.user.email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Check if user is eligible to participate (but don't block viewing)
+        const battleWins: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as wins FROM hype_battles WHERE winner_id = ? AND closed = 1", [user.id], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        console.log(`User ${user.username} has ${battleWins.wins} Hype Battle wins`);
+
+        const canParticipate = battleWins.wins >= 3;
+
         const currentTournament: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
                 if (err) reject(err);
@@ -1952,10 +1973,52 @@ app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express
             return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
         }
 
-        const participants: ShowdownParticipant[] = await new Promise<any[]>((resolve, reject) => {
+        const participant: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM showdown_participants WHERE tournament_id = ? AND user_id = ?",
+                [currentTournament.id, user.id],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        // Return qualification status for participation, but allow viewing regardless
+        res.json({
+            canView: true, // Everyone can view the page
+            canParticipate: canParticipate, // Only users with 3+ wins can participate
+            alreadyJoined: !!participant, // Whether the user is already a participant
+            tournamentId: currentTournament.id,
+            wins: battleWins.wins // Include the number of wins for frontend display
+        });
+    } catch (err) {
+        console.error("Qualify error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const tournament: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1",
+                [],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (!tournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        const participants: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT sp.user_id, u.username, u.wins, u.tier, sp.status, sp.bracket_position FROM showdown_participants sp JOIN users u ON sp.user_id = u.id WHERE sp.tournament_id = ? AND sp.status = 'active'",
-                [currentTournament.id],
+                "SELECT sp.*, u.username FROM showdown_participants sp JOIN users u ON sp.user_id = u.id WHERE sp.tournament_id = ? AND sp.status = 'active'",
+                [tournament.id],
                 (err, rows) => {
                     if (err) reject(err);
                     resolve(rows);
@@ -1963,20 +2026,9 @@ app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express
             );
         });
 
-        // Simple bracket generation (can be enhanced with a library or algorithm)
-        const bracket: BracketMatch[] = [];
-        for (let i = 0; i < participants.length; i += 2) {
-            bracket.push({
-                id: i / 2 + 1,
-                participant1: participants[i],
-                participant2: participants[i + 1] || null,
-                round: 1,
-            });
-        }
-
-        res.json({ bracket });
+        res.json({ tournament, participants });
     } catch (err) {
-        console.error("Bracket error:", err);
+        console.error("Bracket fetch error:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
