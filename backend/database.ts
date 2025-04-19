@@ -234,11 +234,42 @@ db.serialize(() => {
         )
     `);
 
-    // Scheduled Battles table
+    // Showdown Schedule table (replacing scheduled_battles)
     db.run(`
-        CREATE TABLE IF NOT EXISTS scheduled_battles (
+        CREATE TABLE IF NOT EXISTS showdown_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT
+            date TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // Showdown Clips table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS showdown_clips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            clip_url TEXT NOT NULL,
+            category TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, tournament_id, category) -- Prevent duplicate submissions in the same category
+        )
+    `);
+
+    // Showdown Clip Votes table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS showdown_clip_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            clip_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (clip_id) REFERENCES showdown_clips(id),
+            UNIQUE(user_id, category) -- Ensure one vote per user per category
         )
     `);
 
@@ -309,7 +340,7 @@ db.serialize(() => {
         )
     `);
 
-    // Hall of Fame table (single definition)
+    // Hall of Fame table (for Ultimate Showdown winners)
     db.run(`
         CREATE TABLE IF NOT EXISTS hall_of_fame (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -322,11 +353,28 @@ db.serialize(() => {
         )
     `);
 
+    // Post Hall of Fame table (for tracking post likes)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS post_hall_of_fame (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            post_id INTEGER,
+            total_likes INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (post_id) REFERENCES posts(id),
+            UNIQUE(user_id)
+        )
+    `);
+
     // Add indices for performance
     db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
 
     // Initial setup for the next Ultimate Showdown (e.g., monthly)
     const nextMonth = new Date();
