@@ -2609,9 +2609,10 @@ app.post("/api/coin-flip", authenticateToken, async (req, res) => {
 
 app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     try {
-        const rankings: any[] = await new Promise<any[]>((resolve, reject) => {
+        // Fetch Ultimate Showdown winners
+        const ultimateShowdownWinners: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.awarded_at DESC",
+                "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.awarded_at DESC LIMIT 10",
                 [],
                 (err, rows) => {
                     if (err) reject(err);
@@ -2620,8 +2621,95 @@ app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
             );
         });
 
-        console.log(`[${new Date().toISOString()}] /api/hall-of-fame returned ${rankings.length} rankings`);
-        res.json(rankings);
+        // Fetch Top Rappers/Dancers/Creators (All-Time)
+        const categories = ["Rap Battle", "Dance-off", "Meme Creation", "Artistic Speed Drawing", "Beat-making Face-off"];
+        const topCreatorsAllTime: { [key: string]: any[] } = {};
+        for (const category of categories) {
+            const winners = await new Promise<any[]>((resolve, reject) => {
+                db.all(
+                    `SELECT u.id, u.username, COUNT(*) as wins
+                     FROM hype_battles h
+                     JOIN users u ON h.winner_id = u.id
+                     WHERE h.category = ? AND h.closed = 1
+                     GROUP BY u.id, u.username
+                     ORDER BY wins DESC LIMIT 5`,
+                    [category],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows);
+                    }
+                );
+            });
+            topCreatorsAllTime[category] = winners;
+        }
+
+        // Fetch Top Rappers/Dancers/Creators (Monthly)
+        const topCreatorsMonthly: { [key: string]: any[] } = {};
+        for (const category of categories) {
+            const winners = await new Promise<any[]>((resolve, reject) => {
+                db.all(
+                    `SELECT u.id, u.username, COUNT(*) as wins
+                     FROM hype_battles h
+                     JOIN users u ON h.winner_id = u.id
+                     WHERE h.category = ? AND h.closed = 1
+                     AND h.created_at >= datetime('now', '-30 days')
+                     GROUP BY u.id, u.username
+                     ORDER BY wins DESC LIMIT 5`,
+                    [category],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows);
+                    }
+                );
+            });
+            topCreatorsMonthly[category] = winners;
+        }
+
+        // Fetch Top Squads
+        const topSquads: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT g.*, u.username as creator_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.wins DESC LIMIT 5",
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        // Fetch Top Earners
+        const topEarners: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 5",
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        // Fetch Developer Picks
+        const developerPicks: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT d.*, u.username as actual_username FROM developer_picks d JOIN users u ON d.user_id = u.id ORDER BY d.awarded_at DESC",
+                [],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        console.log(`[${new Date().toISOString()}] /api/hall-of-fame returned data for all sections`);
+        res.json({
+            ultimateShowdownWinners,
+            topCreatorsAllTime,
+            topCreatorsMonthly,
+            topSquads,
+            topEarners,
+            developerPicks
+        });
     } catch (err) {
         console.error(`[${new Date().toISOString()}] Hall of fame error:`, err);
         res.status(500).json({ message: "Internal server error" });
