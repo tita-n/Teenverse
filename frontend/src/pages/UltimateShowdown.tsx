@@ -12,15 +12,23 @@ const socket = io("/", {
 });
 
 export default function UltimateShowdown() {
-    const [vote, setVote] = useState("");
+    const [vote, setVote] = useState(""); // For voting on the date
+    const [clipUrl, setClipUrl] = useState(""); // For submitting a clip
+    const [category, setCategory] = useState("Rap"); // Selected category for clip submission/voting
     const [message, setMessage] = useState("");
-    const [bracket, setBracket] = useState<any[]>([]);
+    const [bracket, setBracket] = useState<any[]>([]); // List of participants
+    const [clips, setClips] = useState<any[]>([]); // List of submitted clips
     const [liveStatus, setLiveStatus] = useState(false);
-    const [coins, setCoins] = useState(0);
-    const [boostTarget, setBoostTarget] = useState<number | null>(null);
+    const [chosenDate, setChosenDate] = useState<string | null>(null); // The voted date
+    const [hasVoted, setHasVoted] = useState<{ [category: string]: boolean }>({}); // Track votes per category
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isQualified, setIsQualified] = useState(false); // For clip submission
+    const [isParticipant, setIsParticipant] = useState(false); // Check if user is in the bracket
     const { user, token } = useAuth();
+
+    // Categories for the showdown
+    const categories = ["Rap", "Dance", "Singing"];
 
     useEffect(() => {
         console.log("UltimateShowdown useEffect triggered", { user, token });
@@ -37,7 +45,7 @@ export default function UltimateShowdown() {
                 setLoading(true);
                 console.log("Fetching data for user:", user.email);
 
-                // Fix 1: Use POST for /api/ultimate-showdown/qualify and include email
+                // Check qualification status for clip submission
                 const qualificationRes = await axios.post(
                     "/api/ultimate-showdown/qualify",
                     { email: user.email },
@@ -45,22 +53,58 @@ export default function UltimateShowdown() {
                 );
                 console.log("Qualification response:", qualificationRes.data);
                 setMessage(qualificationRes.data.message);
+                setIsQualified(qualificationRes.data.message.includes("qualified"));
 
-                // Fix 2: Access matches instead of bracket
-                const bracketRes = await axios.get("/api/ultimate-showdown/bracket", {
+                // Fetch the bracket (list of participants)
+                try {
+                    const bracketRes = await axios.get("/api/ultimate-showdown/bracket", {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    console.log("Bracket response:", bracketRes.data);
+                    setBracket(bracketRes.data.matches || []);
+                    // Check if the current user is a participant
+                    const userInBracket = bracketRes.data.matches.some((match: any) =>
+                        [match.participant1, match.participant2].some(
+                            (participant: any) => participant && participant.email === user.email
+                        )
+                    );
+                    setIsParticipant(userInBracket);
+                } catch (bracketErr) {
+                    console.error("Bracket fetch error:", bracketErr.response?.data || bracketErr.message);
+                    setBracket([]);
+                    setMessage((prev) => prev + " | Bracket error: " + (bracketErr.response?.data?.message || "Failed to load bracket"));
+                }
+
+                // Fetch the chosen date (assuming the backend provides this)
+                try {
+                    const dateRes = await axios.get("/api/showdown-date", {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    console.log("Chosen date response:", dateRes.data);
+                    setChosenDate(dateRes.data.date || null);
+                } catch (dateErr) {
+                    console.error("Date fetch error:", dateErr.response?.data || dateErr.message);
+                    setChosenDate(null);
+                }
+
+                // Fetch submitted clips
+                try {
+                    const clipsRes = await axios.get("/api/showdown-clips", {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    console.log("Clips response:", clipsRes.data);
+                    setClips(clipsRes.data.clips || []);
+                } catch (clipsErr) {
+                    console.error("Clips fetch error:", clipsErr.response?.data || clipsErr.message);
+                    setClips([]);
+                }
+
+                // Check if the user has already voted in each category
+                const voteStatusRes = await axios.get("/api/user-vote-status", {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                console.log("Bracket response:", bracketRes.data);
-                setBracket(bracketRes.data.matches || []); // Ensure bracket is an array
-
-                // Fetch user coins
-                const coinsRes = await axios.post(
-                    "/api/get-coins",
-                    { email: user.email },
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                console.log("Coins response:", coinsRes.data);
-                setCoins(coinsRes.data.coins);
+                console.log("Vote status response:", voteStatusRes.data);
+                setHasVoted(voteStatusRes.data.hasVoted || {});
 
                 setError(null);
             } catch (err) {
@@ -80,7 +124,10 @@ export default function UltimateShowdown() {
             console.log("Live event started:", data);
             setLiveStatus(true);
         });
-        socket.on("showdown_boost_update", (data) => console.log("Boost update:", data));
+        socket.on("showdown_clip_update", (data) => {
+            console.log("Clip update:", data);
+            setClips((prev) => [...prev, data.clip]);
+        });
         socket.on("showdown_end", (data) => {
             console.log("Showdown ended:", data);
             setLiveStatus(false);
@@ -89,13 +136,17 @@ export default function UltimateShowdown() {
 
         return () => {
             socket.off("showdown_live_start");
-            socket.off("showdown_boost_update");
+            socket.off("showdown_clip_update");
             socket.off("showdown_end");
             socket.disconnect();
         };
     }, [user, token]);
 
-    const submitVote = async () => {
+    // Check if today is the chosen date
+    const today = new Date().toISOString().split("T")[0]; // Format: YYYY-MM-DD
+    const isShowdownDay = chosenDate && today === chosenDate;
+
+    const submitDateVote = async () => {
         if (!user || !token) {
             setMessage("Please log in to vote.");
             return;
@@ -110,32 +161,57 @@ export default function UltimateShowdown() {
                 { email: user.email, dateOption: vote },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
-            setMessage("Vote submitted successfully!");
+            setMessage("Date vote submitted successfully!");
         } catch (err) {
-            setMessage("Error submitting vote: " + (err.response?.data?.message || err.message));
+            setMessage("Error submitting date vote: " + (err.response?.data?.message || err.message));
         }
     };
 
-    const submitBoost = async () => {
-        if (!user || !token || !boostTarget || coins <= 0) {
-            setMessage("Insufficient coins or invalid target.");
+    const submitClip = async () => {
+        if (!user || !token) {
+            setMessage("Please log in to submit a clip.");
+            return;
+        }
+        if (!clipUrl || !category) {
+            setMessage("Please provide a clip URL and select a category.");
             return;
         }
         try {
             await axios.post(
-                "/api/ultimate-showdown/boost",
-                {
-                    email: user.email,
-                    tournamentId: 1, // Replace with dynamic tournament ID
-                    targetUserId: boostTarget,
-                    coins: Math.min(coins, 100), // Cap at 100 coins per boost
-                },
+                "/api/submit-clip",
+                { email: user.email, clipUrl, category },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
-            setCoins(coins - Math.min(coins, 100));
-            setMessage("Boost submitted!");
+            setMessage("Clip submitted successfully!");
+            setClipUrl(""); // Clear the input
         } catch (err) {
-            setMessage("Error boosting: " + (err.response?.data?.message || err.message));
+            setMessage("Error submitting clip: " + (err.response?.data?.message || err.message));
+        }
+    };
+
+    const voteForClip = async (clipId: string, category: string) => {
+        if (!user || !token) {
+            setMessage("Please log in to vote.");
+            return;
+        }
+        if (isParticipant) {
+            setMessage("Participants cannot vote in the competition.");
+            return;
+        }
+        if (hasVoted[category]) {
+            setMessage("You have already voted in this category.");
+            return;
+        }
+        try {
+            await axios.post(
+                "/api/vote-clip",
+                { email: user.email, clipId, category },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            setHasVoted((prev) => ({ ...prev, [category]: true }));
+            setMessage("Vote submitted successfully!");
+        } catch (err) {
+            setMessage("Error submitting vote: " + (err.response?.data?.message || err.message));
         }
     };
 
@@ -143,19 +219,6 @@ export default function UltimateShowdown() {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
                 <div className="text-center text-gray-800 text-xl">Loading...</div>
-            </div>
-        );
-    }
-
-    if (!user || !token) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center text-red-500 text-xl">
-                    Please log in to access Ultimate Showdown.
-                    <div className="mt-4 text-gray-800">
-                        Debug: user={JSON.stringify(user)}, token={token ? "Present" : "Missing"}
-                    </div>
-                </div>
             </div>
         );
     }
@@ -182,19 +245,26 @@ export default function UltimateShowdown() {
                     <h1 className="text-3xl font-bold text-gray-800 mb-6">Ultimate Showdown</h1>
                     {message && <p className="text-center text-green-600 mb-6">{message}</p>}
 
-                    {/* Invitation Status */}
+                    {/* Showdown Status */}
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Your Invitation Status</h2>
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Showdown Status</h2>
                         <p>
-                            {message.includes("qualified")
-                                ? "Qualified! You're eligible to participate."
-                                : "Not Qualified. Win 3+ Hype Battles to qualify."}
+                            {isQualified
+                                ? "You are qualified to participate! You can submit a clip on the showdown day."
+                                : "You are not qualified to participate, but you can vote for your favorite clips on the showdown day."}
                         </p>
+                        {chosenDate ? (
+                            <p className="text-gray-600 mt-2">
+                                Chosen Date: {chosenDate} {isShowdownDay ? "(Today!)" : ""}
+                            </p>
+                        ) : (
+                            <p className="text-gray-600 mt-2">Date not yet chosen. Vote below!</p>
+                        )}
                     </div>
 
-                    {/* Bracket Visualization */}
+                    {/* Participants List */}
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Tournament Bracket</h2>
+                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Participants</h2>
                         {bracket.length > 0 ? (
                             bracket.map((match) => (
                                 <div key={match.id} className="border p-2 mb-2">
@@ -202,58 +272,106 @@ export default function UltimateShowdown() {
                                 </div>
                             ))
                         ) : (
-                            <p className="text-gray-600">Bracket not available yet.</p>
+                            <p className="text-gray-600">No participants yet.</p>
                         )}
                     </div>
 
-                    {/* Live Event */}
-                    {liveStatus && (
+                    {/* Clip Submission - Only for Qualified Users on Showdown Day */}
+                    {isQualified && isShowdownDay && (
                         <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Live Event</h2>
-                            <p className="text-gray-600 mb-4">Event is live! Boost your favorite performer.</p>
+                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Submit Your Clip</h2>
                             <select
-                                value={boostTarget || ""}
-                                onChange={(e) => setBoostTarget(parseInt(e.target.value))}
+                                value={category}
+                                onChange={(e) => setCategory(e.target.value)}
                                 className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
                             >
-                                <option value="">Select a performer</option>
-                                {bracket.map((match) => (
-                                    <option key={match.participant1.userId} value={match.participant1.userId}>
-                                        {match.participant1.username}
+                                <option value="">Select a category</option>
+                                {categories.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                        {cat}
                                     </option>
                                 ))}
                             </select>
+                            <input
+                                type="text"
+                                value={clipUrl}
+                                onChange={(e) => setClipUrl(e.target.value)}
+                                placeholder="Enter your clip URL"
+                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                            />
                             <button
-                                onClick={submitBoost}
+                                onClick={submitClip}
                                 className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-                                disabled={coins <= 0}
                             >
-                                Boost ({coins} coins)
+                                Submit Clip
                             </button>
                         </div>
                     )}
 
-                    {/* Date Voting */}
-                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Vote for Next Date</h2>
-                        <select
-                            value={vote}
-                            onChange={(e) => setVote(e.target.value)}
-                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
-                        >
-                            <option value="">Select a date</option>
-                            <option value="Next Saturday">Next Saturday</option>
-                            <option value="Next Sunday">Next Sunday</option>
-                        </select>
-                        <button
-                            onClick={submitVote}
-                            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
-                        >
-                            Vote
-                        </button>
-                    </div>
+                    {/* Clip Voting - On Showdown Day */}
+                    {isShowdownDay && (
+                        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Vote for Clips</h2>
+                            {clips.length > 0 ? (
+                                categories.map((cat) => (
+                                    <div key={cat} className="mb-6">
+                                        <h3 className="text-lg font-semibold text-gray-800 mb-2">{cat}</h3>
+                                        {clips
+                                            .filter((clip) => clip.category === cat)
+                                            .map((clip) => (
+                                                <div key={clip.id} className="border p-2 mb-2 flex justify-between items-center">
+                                                    <div>
+                                                        <p>Posted by: {clip.username}</p>
+                                                        <a href={clip.url} target="_blank" rel="noopener noreferrer" className="text-blue-500">
+                                                            View Clip
+                                                        </a>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => voteForClip(clip.id, clip.category)}
+                                                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
+                                                        disabled={isParticipant || hasVoted[cat]}
+                                                    >
+                                                        {isParticipant
+                                                            ? "Participants Can't Vote"
+                                                            : hasVoted[cat]
+                                                            ? "Already Voted"
+                                                            : "Vote"}
+                                                    </button>
+                                                </div>
+                                            ))}
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-gray-600">No clips submitted yet.</p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Date Voting - Disabled on Showdown Day */}
+                    {!isShowdownDay && (
+                        <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
+                            <h2 className="text-xl font-semibold text-gray-800 mb-4">Vote for Next Showdown Date</h2>
+                            <select
+                                value={vote}
+                                onChange={(e) => setVote(e.target.value)}
+                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
+                                disabled={!!chosenDate}
+                            >
+                                <option value="">Select a date</option>
+                                <option value="2025-04-26">Next Saturday (2025-04-26)</option>
+                                <option value="2025-04-27">Next Sunday (2025-04-27)</option>
+                            </select>
+                            <button
+                                onClick={submitDateVote}
+                                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition"
+                                disabled={!!chosenDate}
+                            >
+                                {chosenDate ? "Date Already Chosen" : "Vote"}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
-                    }
+}
