@@ -2132,6 +2132,370 @@ app.post("/api/ultimate-showdown/end", authenticateToken, async (req: express.Re
     }
 });
 
+// Fetch the chosen showdown date
+app.get("/api/showdown-date", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const schedule: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT date FROM showdown_schedule ORDER BY created_at DESC LIMIT 1",
+                [],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (!schedule) {
+            return res.status(404).json({ message: "No showdown date scheduled yet" });
+        }
+
+        res.json({ date: schedule.date });
+    } catch (err) {
+        console.error("Showdown date fetch error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Submit a clip for Ultimate Showdown
+app.post("/api/submit-clip", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email, clipUrl, category } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, username, wins, tier FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Check if user is qualified (wins >= 3 and in showdown_participants)
+        const battleWins: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT COUNT(*) as wins FROM hype_battles WHERE winner_id = ? AND closed = 1", [user.id], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (battleWins.wins < 3) {
+            return res.status(400).json({ message: "You need at least 3 Hype Battle wins to submit a clip" });
+        }
+
+        const currentTournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!currentTournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        const isParticipant: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM showdown_participants WHERE tournament_id = ? AND user_id = ? AND status = 'active'",
+                [currentTournament.id, user.id],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (!isParticipant) {
+            return res.status(400).json({ message: "You are not an active participant in the Ultimate Showdown" });
+        }
+
+        // Check if today is the showdown day
+        const schedule: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT date FROM showdown_schedule ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!schedule) {
+            return res.status(400).json({ message: "Showdown date not set" });
+        }
+
+        const today = new Date().toISOString().split("T")[0];
+        if (today !== schedule.date) {
+            return res.status(400).json({ message: "You can only submit clips on the showdown day" });
+        }
+
+        // Check if user already submitted a clip in this category
+        const existingClip: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM showdown_clips WHERE user_id = ? AND tournament_id = ? AND category = ?",
+                [user.id, currentTournament.id, category],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (existingClip) {
+            return res.status(400).json({ message: "You have already submitted a clip in this category" });
+        }
+
+        // Submit the clip
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO showdown_clips (tournament_id, user_id, username, clip_url, category) VALUES (?, ?, ?, ?, ?)",
+                [currentTournament.id, user.id, user.username, clipUrl, category],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        // Fetch the newly inserted clip to broadcast
+        const newClip: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT id, user_id, username, clip_url, category FROM showdown_clips WHERE user_id = ? AND tournament_id = ? AND category = ?",
+                [user.id, currentTournament.id, category],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        // Broadcast clip submission
+        io.emit("showdown_clip_update", { clip: newClip });
+
+        res.json({ message: "Clip submitted successfully!" });
+    } catch (err) {
+        console.error("Submit clip error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Fetch submitted clips
+app.get("/api/showdown-clips", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const currentTournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!currentTournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        const clips: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT id, user_id, username, clip_url as url, category FROM showdown_clips WHERE tournament_id = ?",
+                [currentTournament.id],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        res.json({ clips });
+    } catch (err) {
+        console.error("Fetch clips error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Vote for a clip
+app.post("/api/vote-clip", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const { email, clipId, category } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Check if today is the showdown day
+        const schedule: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT date FROM showdown_schedule ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!schedule) {
+            return res.status(400).json({ message: "Showdown date not set" });
+        }
+
+        const today = new Date().toISOString().split("T")[0];
+        if (today !== schedule.date) {
+            return res.status(400).json({ message: "You can only vote on the showdown day" });
+        }
+
+        // Check if user is a participant (participants can't vote)
+        const currentTournament: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!currentTournament) {
+            return res.status(404).json({ message: "No active Ultimate Showdown tournament" });
+        }
+
+        const isParticipant: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT * FROM showdown_participants WHERE tournament_id = ? AND user_id = ? AND status = 'active'",
+                [currentTournament.id, user.id],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (isParticipant) {
+            return res.status(400).json({ message: "Participants cannot vote in the Ultimate Showdown" });
+        }
+
+        // Check if the clip exists
+        const clip: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM showdown_clips WHERE id = ?", [clipId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!clip) {
+            return res.status(404).json({ message: "Clip not found" });
+        }
+
+        // Check if user has already voted in this category
+        const existingVote: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT id FROM showdown_clip_votes WHERE user_id = ? AND category = ?",
+                [user.id, category],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (existingVote) {
+            return res.status(400).json({ message: "You have already voted in this category" });
+        }
+
+        // Record the vote
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO showdown_clip_votes (user_id, clip_id, category) VALUES (?, ?, ?)",
+                [user.id, clipId, category],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Vote recorded successfully!" });
+    } catch (err) {
+        console.error("Vote clip error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Fetch user's vote status for each category
+app.get("/api/user-vote-status", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [req.user.email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const votes: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT category FROM showdown_clip_votes WHERE user_id = ?",
+                [user.id],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
+
+        const hasVoted: { [key: string]: boolean } = {};
+        votes.forEach((vote) => {
+            hasVoted[vote.category] = true;
+        });
+
+        res.json({ hasVoted });
+    } catch (err) {
+        console.error("Fetch vote status error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Update the /api/determine-showdown-date endpoint to store the date correctly
+app.get("/api/determine-showdown-date", authenticateToken, async (req: express.Request, res: express.Response) => {
+    try {
+        // Check if a date is already scheduled
+        const existingSchedule: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT date FROM showdown_schedule ORDER BY created_at DESC LIMIT 1", [], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (existingSchedule) {
+            return res.json({ message: `Next battle already scheduled for ${existingSchedule.date}!` });
+        }
+
+        const result: any = await new Promise<any>((resolve, reject) => {
+            db.get(
+                "SELECT date_option, COUNT(*) as votes FROM showdown_votes GROUP BY date_option ORDER BY votes DESC LIMIT 1",
+                [],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (result) {
+            await new Promise<void>((resolve, reject) => {
+                db.run("INSERT INTO showdown_schedule (date) VALUES (?)", [result.date_option], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+            res.json({ message: `Next battle scheduled for ${result.date_option}!` });
+        } else {
+            res.json({ message: "No votes yet." });
+        }
+    } catch (err) {
+        console.error("Determine showdown date error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
 
 app.post("/api/coin-flip", authenticateToken, async (req, res) => {
     try {
