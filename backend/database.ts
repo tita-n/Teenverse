@@ -379,6 +379,31 @@ db.serialize(() => {
         )
     `);
 
+        // New table for Rants (anonymous)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS rants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL,
+            category TEXT NOT NULL,
+            upvotes INTEGER DEFAULT 0,
+            reactions TEXT DEFAULT '{}', -- JSON string to store reaction counts
+            hugs INTEGER DEFAULT 0,
+            ask_for_advice INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // New table for Rant Comments (anonymous)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS rant_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rant_id INTEGER,
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(rant_id) REFERENCES rants(id)
+        )
+    `);
+     
     // Add columns to users for special privileges
     db.run(`
         ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
@@ -448,6 +473,8 @@ db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id
 db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
 db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
 db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
+db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
+db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
 db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
 
 // Initial setup for the next Ultimate Showdown
