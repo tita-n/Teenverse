@@ -128,28 +128,262 @@ io.on('connection', (socket) => {
 });
 
 // Endpoint to fetch rants
-app.get("/api/rants", authenticateToken, async (req: express.Request, res: express.Response) => {
+// Fetch rants
+app.get("/api/rants", authenticateToken, async (req, res) => {
     try {
+        const { category } = req.query;
+        let query = "SELECT * FROM rants";
+        let params: any[] = [];
+
+        if (category && typeof category === "string") {
+            query += " WHERE category = ?";
+            params.push(category);
+        }
+
+        query += " ORDER BY created_at DESC";
+
         const rants: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT p.*, u.username as actual_username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode = 'rant' ORDER BY p.created_at DESC",
-                [],
-                (err, rows) => {
+            db.all(query, params, (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Fetch comments for each rant
+        const rantsWithComments = await Promise.all(
+            rants.map(async (rant) => {
+                const comments = await new Promise<any[]>((resolve, reject) => {
+                    db.all(
+                        "SELECT * FROM rant_comments WHERE rant_id = ? ORDER BY created_at ASC",
+                        [rant.id],
+                        (err, rows) => {
+                            if (err) reject(err);
+                            resolve(rows);
+                        }
+                    );
+                });
+                return { ...rant, comments };
+            })
+        );
+
+        console.log(`[${new Date().toISOString()}] /api/rants returned ${rantsWithComments.length} rants`);
+        res.json(rantsWithComments);
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Fetch rants error:`, err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Create a rant
+app.post("/api/create-rant", authenticateToken, async (req, res) => {
+    try {
+        const { email, content, category, askForAdvice } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Validate category
+        const validCategories = [
+            "School Life",
+            "Family Drama",
+            "Relationship Wahala",
+            "Self-Doubt & Mental Struggles",
+            "Fake Friends",
+            "Pressure & Anxiety",
+            "Just Need to Vent"
+        ];
+        if (!validCategories.includes(category)) {
+            return res.status(400).json({ message: "Invalid category" });
+        }
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO rants (content, category, ask_for_advice) VALUES (?, ?, ?)",
+                [content, category, askForAdvice ? 1 : 0],
+                (err) => {
                     if (err) reject(err);
-                    resolve(rows);
+                    resolve();
                 }
             );
         });
 
-        const modifiedRants = rants.map((rant) => {
-            console.log(`Rant ID ${rant.id}: actual_username=${rant.actual_username}`);
-            return { ...rant, username: "Anonymous" };
+        // Award XP and coins
+        let xpBonus = 5;
+        let coinBonus = 5;
+        if (email === "restorationmichael3@gmail.com") {
+            xpBonus += 5;
+            coinBonus += 5;
+        }
+
+        const newXP = user.xp + xpBonus;
+        const newCoins = user.coins + coinBonus;
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
 
-        console.log(`[${new Date().toISOString()}] /api/rants returned ${modifiedRants.length} rants`);
-        res.json(modifiedRants);
+        res.json({ message: `Rant posted anonymously! +${xpBonus} XP and +${coinBonus} coins`, newXP, newCoins });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Get rants error:`, err);
+        console.error(`[${new Date().toISOString()}] Create rant error:`, err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Upvote a rant
+app.post("/api/upvote-rant", authenticateToken, async (req, res) => {
+    try {
+        const { email, rantId } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const rant: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!rant) return res.status(404).json({ message: "Rant not found" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE rants SET upvotes = upvotes + 1 WHERE id = ?", [rantId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.json({ message: "Upvoted successfully!" });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Upvote rant error:`, err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Add a reaction to a rant
+app.post("/api/react-to-rant", authenticateToken, async (req, res) => {
+    try {
+        const { email, rantId, reaction } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const validReactions = ["❤️", "😢", "😠", "🥲", "😂", "😮", "🤗"];
+        if (!validReactions.includes(reaction)) {
+            return res.status(400).json({ message: "Invalid reaction" });
+        }
+
+        const rant: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT reactions FROM rants WHERE id = ?", [rantId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!rant) return res.status(404).json({ message: "Rant not found" });
+
+        // Parse reactions (stored as JSON string)
+        let reactions: { [key: string]: number } = {};
+        try {
+            reactions = JSON.parse(rant.reactions || "{}");
+        } catch (e) {
+            console.error("Error parsing reactions:", e);
+        }
+
+        // Increment the reaction count
+        reactions[reaction] = (reactions[reaction] || 0) + 1;
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "UPDATE rants SET reactions = ? WHERE id = ?",
+                [JSON.stringify(reactions), rantId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Reaction added!" });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] React to rant error:`, err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Send an anonymous hug
+app.post("/api/send-hug", authenticateToken, async (req, res) => {
+    try {
+        const { email, rantId } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const rant: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!rant) return res.status(404).json({ message: "Rant not found" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE rants SET hugs = hugs + 1 WHERE id = ?", [rantId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.json({ message: "Hug sent! 💖" });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Send hug error:`, err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+// Add a comment to a rant
+app.post("/api/add-comment", authenticateToken, async (req, res) => {
+    try {
+        const { email, rantId, content } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        const rant: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!rant) return res.status(404).json({ message: "Rant not found" });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO rant_comments (rant_id, content) VALUES (?, ?)",
+                [rantId, content],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Comment added anonymously!" });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Add comment error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
