@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
+import Comment from "../components/Comment";
 
 interface Post {
     id: number;
@@ -9,11 +10,12 @@ interface Post {
     content: string;
     mode: string;
     likes: number;
-    reactions: string;
+    reactions: { [reaction: string]: string[] };
     created_at: string;
+    user_id: number;
 }
 
-interface Comment {
+interface CommentType {
     id: number;
     post_id: number;
     user_id: number;
@@ -45,9 +47,10 @@ export default function NewsFeed() {
     const [content, setContent] = useState("");
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(true);
-    const [comments, setComments] = useState<{ [postId: number]: Comment[] }>({});
+    const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
-    const [replyContent, setReplyContent] = useState<{ [commentId: number]: string }>({});
+    const [showComments, setShowComments] = useState<{ [postId: number]: boolean }>({});
+    const [visibleComments, setVisibleComments] = useState<{ [postId: number]: number }>({});
     const [showReactions, setShowReactions] = useState<number | null>(null);
     const [editingPost, setEditingPost] = useState<number | null>(null);
     const [editContent, setEditContent] = useState("");
@@ -55,6 +58,7 @@ export default function NewsFeed() {
     const { user, token } = useAuth();
 
     const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
+    const commentsPerPage = 3;
 
     useEffect(() => {
         const fetchPosts = async () => {
@@ -69,13 +73,13 @@ export default function NewsFeed() {
                 }));
                 setPosts(postsData);
 
-                // Fetch comments for each post
-                const commentsData: { [postId: number]: Comment[] } = {};
+                const commentsData: { [postId: number]: CommentType[] } = {};
                 for (const post of postsData) {
                     const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
                     commentsData[post.id] = commentRes.data;
+                    setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
                 }
                 setComments(commentsData);
             } catch (err) {
@@ -183,7 +187,7 @@ export default function NewsFeed() {
         }
     };
 
-    const handleReply = async (commentId: number, postId: number) => {
+    const handleReply = async (commentId: number, postId: number, content: string) => {
         if (!user || !token) {
             setMessage("Please log in to reply.");
             return;
@@ -192,11 +196,10 @@ export default function NewsFeed() {
             await axios.post("/api/posts/comments/reply", {
                 email: user.email,
                 commentId,
-                content: replyContent[commentId] || ""
+                content
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setReplyContent({ ...replyContent, [commentId]: "" });
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -327,6 +330,17 @@ export default function NewsFeed() {
         }
     };
 
+    const toggleComments = (postId: number) => {
+        setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
+    };
+
+    const loadMoreComments = (postId: number) => {
+        setVisibleComments((prev) => ({
+            ...prev,
+            [postId]: (prev[postId] || commentsPerPage) + commentsPerPage
+        }));
+    };
+
     if (!user || !token) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -346,13 +360,13 @@ export default function NewsFeed() {
     return (
         <div>
             <Navigation />
-            <div className="min-h-screen bg-gray-100 p-6">
-                <div className="max-w-4xl mx-auto">
-                    <h1 className="text-3xl font-bold text-gray-800 mb-6">News Feed</h1>
+            <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
+                <div className="max-w-2xl mx-auto">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">News Feed</h1>
                     <p className="text-center text-green-600 mb-6">{message}</p>
 
-                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Create a Post</h2>
+                    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md mb-6">
+                        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Create a Post</h2>
                         <textarea
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
@@ -361,168 +375,172 @@ export default function NewsFeed() {
                         />
                         <button
                             onClick={postUpdate}
-                            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+                            className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
                         >
                             Post
                         </button>
                     </div>
 
-                    <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4">Recent Posts</h2>
+                    <div className="space-y-6">
                         {posts.length > 0 ? (
                             posts.map((post) => (
-                                <div key={post.id} className="border-b py-4">
-                                    <p className="text-gray-800 font-semibold">{post.username}</p>
-                                    {editingPost === post.id ? (
-                                        <div>
-                                            <textarea
-                                                value={editContent}
-                                                onChange={(e) => setEditContent(e.target.value)}
-                                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
-                                            />
-                                            <button
-                                                onClick={() => handleEdit(post.id)}
-                                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition mr-2"
-                                            >
-                                                Save
-                                            </button>
-                                            <button
-                                                onClick={() => setEditingPost(null)}
-                                                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <p className="text-gray-600 whitespace-pre-wrap">{post.content}</p>
-                                            <p className="text-gray-500 text-sm">{new Date(post.created_at).toLocaleString()}</p>
-                                            {post.user_id === user.id && (
-                                                <button
-                                                    onClick={() => startEditing(post)}
-                                                    className="text-gray-600 hover:text-gray-800 text-sm mr-2"
-                                                >
-                                                    Edit
-                                                </button>
+                                <div key={post.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                                    <div className="flex items-start">
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-gray-800">{post.username}</p>
+                                            {editingPost === post.id ? (
+                                                <div className="mt-2">
+                                                    <textarea
+                                                        value={editContent}
+                                                        onChange={(e) => setEditContent(e.target.value)}
+                                                        className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
+                                                    />
+                                                    <div className="flex space-x-2">
+                                                        <button
+                                                            onClick={() => handleEdit(post.id)}
+                                                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                                                        >
+                                                            Save
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingPost(null)}
+                                                            className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <p className="text-gray-700 whitespace-pre-wrap mt-1">{post.content}</p>
+                                                    <p className="text-gray-500 text-sm mt-1">{new Date(post.created_at).toLocaleString()}</p>
+                                                    {post.user_id === user.id && (
+                                                        <button
+                                                            onClick={() => startEditing(post)}
+                                                            className="text-gray-600 hover:text-gray-800 text-sm mt-1"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                    )}
+                                                </>
                                             )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between mt-3 border-t pt-2">
+                                        <div className="flex items-center space-x-2">
                                             <button
                                                 onClick={() => handleLike(post.id)}
-                                                className="mt-2 text-blue-600 hover:text-blue-800 mr-2"
+                                                className="text-blue-600 hover:text-blue-800 flex items-center"
                                             >
                                                 👍 {post.likes || 0}
                                             </button>
-                                            <button
-                                                onClick={() => setShowReactions(show.id === showReactions ? null : post.id)}
-                                                className="mt-2 text-yellow-600 hover:text-yellow-800 mr-2"
-                                            >
-                                                😊 React
-                                            </button>
-                                            {showReactions === post.id && (
-                                                <div className="flex flex-wrap mt-2">
-                                                    {reactionsList.map((reaction) => (
-                                                        <button
-                                                            key={reaction}
-                                                            onClick={() => handleReact(post.id, reaction)}
-                                                            className="bg-gray-200 text-gray-800 px-2 py-1 rounded-lg m-1 hover:bg-gray-300"
-                                                        >
-                                                            {reaction}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            <div className="mt-2">
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() => setShowReactions(post.id === showReactions ? null : post.id)}
+                                                    className="text-yellow-600 hover:text-yellow-800 flex items-center"
+                                                >
+                                                    😊 React
+                                                </button>
+                                                {showReactions === post.id && (
+                                                    <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg p-2 flex space-x-1 z-10">
+                                                        {reactionsList.map((reaction) => (
+                                                            <button
+                                                                key={reaction}
+                                                                onClick={() => handleReact(post.id, reaction)}
+                                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 transition"
+                                                            >
+                                                                {reaction}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center space-x-1">
                                                 {Object.entries(post.reactions).map(([reaction, users]: [string, string[]]) => (
                                                     users.length > 0 && (
-                                                        <span key={reaction} className="text-sm text-gray-600 mr-2">
+                                                        <span key={reaction} className="text-sm text-gray-600">
                                                             {reaction}: {users.length}
                                                         </span>
                                                     )
                                                 ))}
                                             </div>
-                                            <div className="mt-2">
-                                                <select
-                                                    onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
-                                                    className="border rounded-lg p-1 text-sm"
-                                                    defaultValue=""
-                                                >
-                                                    <option value="" disabled>Share to Squad</option>
-                                                    {squads.map((squad) => (
-                                                        <option key={squad.id} value={squad.id}>
-                                                            {squad.game_name} - {squad.description}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => toggleComments(post.id)}
+                                            className="text-indigo-600 hover:text-indigo-800 text-sm"
+                                        >
+                                            {showComments[post.id] ? "Hide comments" : `View comments (${comments[post.id]?.length || 0})`}
+                                        </button>
+                                    </div>
+
+                                    {showComments[post.id] && (
+                                        <div className="mt-4">
+                                            {comments[post.id]?.length > 0 ? (
+                                                <>
+                                                    {comments[post.id]
+                                                        .sort((a, b) => b.pinned - a.pinned)
+                                                        .slice(0, visibleComments[post.id])
+                                                        .map((comment) => (
+                                                            <Comment
+                                                                key={comment.id}
+                                                                comment={comment}
+                                                                postId={post.id}
+                                                                user={user}
+                                                                token={token}
+                                                                onCommentLike={handleCommentLike}
+                                                                onPinComment={handlePinComment}
+                                                                onReply={handleReply}
+                                                            />
+                                                        ))}
+                                                    {comments[post.id].length > visibleComments[post.id] && (
+                                                        <button
+                                                            onClick={() => loadMoreComments(post.id)}
+                                                            className="text-indigo-600 hover:text-indigo-800 text-sm mt-2"
+                                                        >
+                                                            View more comments
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="text-gray-600 text-sm">No comments yet.</p>
+                                            )}
+
                                             <div className="mt-4">
                                                 <textarea
                                                     value={commentContent[post.id] || ""}
                                                     onChange={(e) => setCommentContent({ ...commentContent, [post.id]: e.target.value })}
                                                     placeholder="Add a comment..."
-                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
+                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                                                 />
                                                 <button
                                                     onClick={() => handleComment(post.id)}
-                                                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
+                                                    className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
                                                 >
                                                     Comment
                                                 </button>
                                             </div>
-                                            <div className="mt-4">
-                                                {comments[post.id]?.length > 0 ? (
-                                                    comments[post.id].sort((a, b) => b.pinned - a.pinned).map((comment) => (
-                                                        <div key={comment.id} className={`ml-4 mt-2 ${comment.pinned ? "bg-yellow-100 p-2 rounded-lg" : ""}`}>
-                                                            <p className="text-gray-800 font-semibold">{comment.username} {comment.pinned ? "(Pinned)" : ""}</p>
-                                                            <p className="text-gray-600 whitespace-pre-wrap">{comment.content}</p>
-                                                            <p className="text-gray-500 text-sm">{new Date(comment.created_at).toLocaleString()}</p>
-                                                            <button
-                                                                onClick={() => handleCommentLike(comment.id, post.id)}
-                                                                className="text-blue-600 hover:text-blue-800 text-sm mr-2"
-                                                            >
-                                                                👍 {comment.likes || 0}
-                                                            </button>
-                                                            {post.user_id === user.id && !comment.pinned && (
-                                                                <button
-                                                                    onClick={() => handlePinComment(comment.id, post.id)}
-                                                                    className="text-green-600 hover:text-green-800 text-sm mr-2"
-                                                                >
-                                                                    Pin
-                                                                </button>
-                                                            )}
-                                                            <textarea
-                                                                value={replyContent[comment.id] || ""}
-                                                                onChange={(e) => setReplyContent({ ...replyContent, [comment.id]: e.target.value })}
-                                                                placeholder="Reply..."
-                                                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-2"
-                                                            />
-                                                            <button
-                                                                onClick={() => handleReply(comment.id, post.id)}
-                                                                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition mt-2"
-                                                            >
-                                                                Reply
-                                                            </button>
-                                                            {comment.replies?.length > 0 && (
-                                                                <div className="ml-4 mt-2">
-                                                                    {comment.replies.map((reply) => (
-                                                                        <div key={reply.id} className="mt-2">
-                                                                            <p className="text-gray-800 font-semibold">{reply.username}</p>
-                                                                            <p className="text-gray-600 whitespace-pre-wrap">{reply.content}</p>
-                                                                            <p className="text-gray-500 text-sm">{new Date(reply.created_at).toLocaleString()}</p>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <p className="text-gray-600 ml-4">No comments yet.</p>
-                                                )}
-                                            </div>
-                                        </>
+                                        </div>
                                     )}
+
+                                    <div className="mt-3">
+                                        <select
+                                            onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
+                                            className="border rounded-lg p-1 text-sm text-gray-600"
+                                            defaultValue=""
+                                        >
+                                            <option value="" disabled>Share to Squad</option>
+                                            {squads.map((squad) => (
+                                                <option key={squad.id} value={squad.id}>
+                                                    {squad.game_name} - {squad.description}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             ))
                         ) : (
-                            <p className="text-gray-600">No posts yet.</p>
+                            <p className="text-gray-600 text-center">No posts yet.</p>
                         )}
                     </div>
                 </div>
