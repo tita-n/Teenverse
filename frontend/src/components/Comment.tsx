@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 
 interface Comment {
     id: number;
@@ -11,6 +12,7 @@ interface Comment {
     pinned: number;
     replies: Reply[];
     likes: number;
+    verified?: number; // Add verified field
 }
 
 interface Reply {
@@ -20,6 +22,7 @@ interface Reply {
     username: string;
     content: string;
     created_at: string;
+    verified?: number; // Add verified field
 }
 
 interface CommentProps {
@@ -36,6 +39,33 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
     const [replyContent, setReplyContent] = useState("");
     const [showReplyInput, setShowReplyInput] = useState(false);
 
+    // Fetch verified status for comment and replies
+    const fetchVerifiedStatus = async (username: string) => {
+        try {
+            const res = await axios.get(`/api/users/profile/${username}`);
+            return res.data.user.verified;
+        } catch (err) {
+            console.error("Error fetching verified status:", err);
+            return 0;
+        }
+    };
+
+    useEffect(() => {
+        const updateVerifiedStatus = async () => {
+            // Fetch verified status for the comment
+            const commentVerified = await fetchVerifiedStatus(comment.username);
+            comment.verified = commentVerified;
+
+            // Fetch verified status for each reply
+            for (const reply of comment.replies) {
+                const replyVerified = await fetchVerifiedStatus(reply.username);
+                reply.verified = replyVerified;
+            }
+        };
+
+        updateVerifiedStatus();
+    }, [comment]);
+
     const handleReplySubmit = () => {
         if (replyContent.trim()) {
             onReply(comment.id, postId, replyContent);
@@ -48,7 +78,17 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
         <div className={`p-3 ${comment.pinned ? "bg-yellow-50 border-l-4 border-yellow-400" : "border-l-2 border-gray-200"}`}>
             <div className="flex items-start">
                 <div className="flex-1">
-                    <p className="font-semibold text-gray-800">{comment.username} {comment.pinned ? <span className="text-xs text-yellow-600">(Pinned)</span> : ""}</p>
+                    <Link to={`/profile/${comment.username}`}>
+                        <p className="font-semibold text-gray-800 inline">
+                            {comment.username}{" "}
+                            {comment.verified ? (
+                                <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                    ✓
+                                </span>
+                            ) : null}
+                            {comment.pinned ? <span className="text-xs text-yellow-600"> (Pinned)</span> : ""}
+                        </p>
+                    </Link>
                     <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
                     <p className="text-gray-500 text-xs mt-1">{new Date(comment.created_at).toLocaleString()}</p>
                     <div className="flex items-center mt-1 space-x-3">
@@ -76,7 +116,6 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                 </div>
             </div>
 
-            {/* Reply Input */}
             {showReplyInput && (
                 <div className="mt-2 ml-4">
                     <textarea
@@ -102,12 +141,20 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                 </div>
             )}
 
-            {/* Replies */}
             {comment.replies?.length > 0 && (
                 <div className="ml-6 mt-2 space-y-2">
                     {comment.replies.map((reply) => (
                         <div key={reply.id} className="border-l-2 border-gray-200 pl-3">
-                            <p className="font-semibold text-gray-800 text-sm">{reply.username}</p>
+                            <Link to={`/profile/${reply.username}`}>
+                                <p className="font-semibold text-gray-800 text-sm inline">
+                                    {reply.username}{" "}
+                                    {reply.verified ? (
+                                        <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                            ✓
+                                        </span>
+                                    ) : null}
+                                </p>
+                            </Link>
                             <p className="text-gray-700 whitespace-pre-wrap text-sm">{reply.content}</p>
                             <p className="text-gray-500 text-xs mt-1">{new Date(reply.created_at).toLocaleString()}</p>
                         </div>
