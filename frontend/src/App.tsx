@@ -6,6 +6,7 @@ import RantZone from "./pages/RantZone";
 import GameSquad from "./pages/GameSquad";
 import SquadDetails from "./pages/SquadDetails";
 import Profile from "./pages/Profile";
+import ControlPanel from "./pages/ControlPanel";
 import NewsFeed from "./pages/NewsFeed";
 import BuyCoins from "./pages/BuyCoins";
 import HypeBattles from "./pages/HypeBattles";
@@ -29,6 +30,7 @@ export default function App() {
                     <Route path="/game-squad" element={<GameSquad />} />
                     <Route path="/squad-details/:squadId" element={<SquadDetails />} />
                     <Route path="/profile" element={<Profile />} />
+                    <Route path="/control-panel" element={<ControlPanel />} />
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
                     <Route path="/hype-battles" element={<HypeBattles />} />
