@@ -455,6 +455,72 @@ db.serialize(() => {
         }
     });
 
+    // Post Comments table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS post_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER,
+            user_id INTEGER,
+            username TEXT,
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            pinned INTEGER DEFAULT 0,
+            FOREIGN KEY(post_id) REFERENCES posts(id),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Comment Replies table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS comment_replies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER,
+            user_id INTEGER,
+            username TEXT,
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(comment_id) REFERENCES post_comments(id),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Comment Likes table (for additional feature)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS comment_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER,
+            user_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(comment_id) REFERENCES post_comments(id),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(comment_id, user_id)
+        )
+    `);
+
+    // Post Shares table (for additional feature)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS post_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER,
+            user_id INTEGER,
+            squad_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(post_id) REFERENCES posts(id),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(squad_id) REFERENCES game_squads(id)
+        )
+    `);
+
+    // Add reactions column to posts table
+    db.run(`
+        ALTER TABLE posts ADD COLUMN reactions TEXT DEFAULT '{}'
+    `, (err) => {
+        if (err && !err.message.includes("duplicate column")) {
+            console.error("Error adding reactions column to posts:", err);
+        }
+    });
+
+
     // Seed shop items
     const initialItems = [
         { name: 'Sports Car', category: 'vehicle', price: 500, image_url: 'https://i.postimg.cc/QdYFWggv/image-fx.png', description: 'A sleek virtual sports car for your profile.', is_limited: 0 },
@@ -546,6 +612,12 @@ db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip
 db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
 db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
 db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
+    // Add indices for new tables
+db.run("CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id)");
+db.run("CREATE INDEX IF NOT EXISTS idx_commentosti_replies_comment ON comment_replies(comment_id)");
+db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
+db.run("CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)");
+
 
 // Initial setup for the next Ultimate Showdown
 const nextMonth = new Date();
