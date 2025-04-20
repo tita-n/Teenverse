@@ -17,7 +17,6 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
-app.use("/api/users", authenticateToken, usersRouter);
 
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "teenverse_secret";
@@ -69,6 +68,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
+app.use("/api/users", authenticateToken, usersRouter);
 
 // Socket.IO setup for real-time voting
 io.on('connection', (socket) => {
