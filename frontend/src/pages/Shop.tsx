@@ -116,9 +116,6 @@ export default function Shop() {
                 <option value="animal">Animals</option>
                 <option value="fashion">Fashion</option>
                 <option value="accessory">Accessories</option>
-                <option value="flair">Profile Flair</option>
-                <option value="squad">Squad Boosts</option>
-                <option value="battle">Hype Battle Props</option>
               </select>
             </div>
           </div>
@@ -130,11 +127,18 @@ export default function Shop() {
                   key={item.id}
                   className="bg-white border rounded-lg p-4 shadow-lg hover:shadow-2xl transform hover:-translate-y-2 transition duration-300"
                 >
-                  <img
-                    src={item.image_url}
-                    alt={item.name}
-                    className="w-full h-40 object-contain mb-2 rounded animate-fade-in"
-                  />
+                  <div className="relative w-full h-40 mb-2">
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      className="w-full h-full object-contain rounded animate-fade-in"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://via.placeholder.com/200';
+                        console.error(`Failed to load image for ${item.name}: ${item.image_url}`);
+                      }}
+                    />
+                  </div>
                   <h2 className="text-xl font-semibold text-gray-800">{item.name}</h2>
                   <p className="text-gray-600">{item.description}</p>
                   <p className="text-lg font-bold text-indigo-600">
