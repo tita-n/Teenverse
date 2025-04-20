@@ -2756,50 +2756,71 @@ app.get('/api/shop/items', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/shop/purchase', authenticateToken, async (req, res) => {
+app.post('/api/shop/purchase', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, itemId } = req.body;
     if (req.user.email !== email) {
-      return res.status(403).json({ message: 'Unauthorized' });
+      res.status(403).json({ message: 'Unauthorized' });
+      return;
     }
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT id, coins FROM users WHERE email = ?', [email], (err, row) => {
+
+    // Fetch user
+    const user = await new Promise<User | undefined>((resolve, reject) => {
+      db.get('SELECT id, email, coins FROM users WHERE email = ?', [email], (err, row: User) => {
         if (err) reject(err);
         resolve(row);
       });
     });
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    const item = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM shop_items WHERE id = ? AND (stock IS NULL OR stock > 0)', [itemId], (err, row) => {
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    // Fetch item
+    const item = await new Promise<ShopItem | undefined>((resolve, reject) => {
+      db.get('SELECT id, name, price, is_limited, stock FROM shop_items WHERE id = ? AND (stock IS NULL OR stock > 0)', [itemId], (err, row: ShopItem) => {
         if (err) reject(err);
         resolve(row);
       });
     });
-    if (!item) return res.status(404).json({ message: 'Item not found or out of stock' });
+    if (!item) {
+      res.status(404).json({ message: 'Item not found or out of stock' });
+      return;
+    }
+
+    // Check coins
     if (user.coins < item.price) {
-      return res.status(400).json({ message: 'Insufficient coins' });
+      res.status(400).json({ message: 'Insufficient coins' });
+      return;
     }
+
+    // Update user coins
     const newCoins = user.coins - item.price;
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       db.run('UPDATE users SET coins = ? WHERE id = ?', [newCoins, user.id], (err) => {
         if (err) reject(err);
         resolve();
       });
     });
-    await new Promise((resolve, reject) => {
+
+    // Add to inventory
+    await new Promise<void>((resolve, reject) => {
       db.run('INSERT INTO user_inventory (user_id, item_id) VALUES (?, ?)', [user.id, itemId], (err) => {
         if (err) reject(err);
         resolve();
       });
     });
+
+    // Update stock for limited items
     if (item.is_limited) {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         db.run('UPDATE shop_items SET stock = stock - 1 WHERE id = ?', [itemId], (err) => {
           if (err) reject(err);
           resolve();
         });
       });
     }
+
     res.json({ message: `Purchased ${item.name}!`, newCoins });
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Purchase item error:`, err);
