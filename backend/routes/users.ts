@@ -3,13 +3,13 @@ import { db } from "../database";
 
 const router = express.Router();
 
-// Fetch user profile by username (publicly accessible, but no email)
+// Get user profile by username
 router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
+    const username = req.params.username;
     try {
-        const username = req.params.username;
         const user: any = await new Promise<any>((resolve, reject) => {
             db.get(
-                "SELECT id, username, verified FROM users WHERE username = ?",
+                "SELECT username, verified FROM users WHERE username = ?",
                 [username],
                 (err, row) => {
                     if (err) reject(err);
@@ -17,16 +17,12 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
                 }
             );
         });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
-
-        // Fetch user's posts
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT p.*, u.username as actual_username FROM posts p JOIN users u ON p.user_id = u.id WHERE p.user_id = ? ORDER BY p.created_at DESC",
-                [user.id],
+                "SELECT * FROM posts WHERE user_id = (SELECT id FROM users WHERE username = ?)",
+                [username],
                 (err, rows) => {
                     if (err) reject(err);
                     resolve(rows);
@@ -36,41 +32,46 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
 
         res.json({ user, posts });
     } catch (err) {
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Error fetching profile:", err);
+        res.status(500).json({ message: "Internal server error: " + err.message });
     }
 });
 
-// Verify a user (only accessible by the creator)
+// Verify/unverify a user (creator only)
 router.post("/verify", async (req: express.Request, res: express.Response) => {
+    const { username, verify } = req.body;
+    if (!req.user) {
+        return res.status(403).json({ message: "Unauthorized: No user authenticated" });
+    }
+    if (req.user.email !== "restorationmichael3@gmail.com") {
+        return res.status(403).json({ message: "Unauthorized: Only the creator can verify users" });
+    }
+    if (!username || typeof verify !== "boolean") {
+        return res.status(400).json({ message: "Username and verify (boolean) are required" });
+    }
     try {
-        const { email, username, verified } = req.body;
-        if (!req.user || req.user.email !== email || email !== "restorationmichael3@gmail.com") {
-            return res.status(403).json({ message: "Unauthorized: Only the creator can verify users" });
-        }
-
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE username = ?", [username], (err, row) => {
+            db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
-
         if (!user) return res.status(404).json({ message: "User not found" });
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "UPDATE users SET verified = ? WHERE id = ?",
-                [verified ? 1 : 0, user.id],
+                "UPDATE users SET verified = ? WHERE username = ?",
+                [verify ? 1 : 0, username],
                 (err) => {
                     if (err) reject(err);
                     resolve();
                 }
             );
         });
-
-        res.json({ message: `User ${username} ${verified ? "verified" : "unverified"} successfully!` });
+        res.json({ message: `User ${username} ${verify ? "verified" : "unverified"} successfully` });
     } catch (err) {
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Error verifying user:", err);
+        res.status(500).json({ message: "Internal server error: " + err.message });
     }
 });
 
