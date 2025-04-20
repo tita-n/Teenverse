@@ -8,6 +8,7 @@ import postRoutes from './routes/posts';
 import { db } from "./database";
 import http from 'http';
 import { Server } from 'socket.io';
+import { User, ShopItem } from './types'; // Import interfaces
 
 dotenv.config();
 
