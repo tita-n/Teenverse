@@ -283,13 +283,14 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
 
         if (!post) return res.status(404).json({ message: "Post not found" });
 
-        let reactions = post.reactions ? JSON.parse(post.reactions) : {};
+        // Define the type for reactions: a dictionary where keys are reaction names and values are arrays of user IDs (as strings)
+        const reactions: { [reaction: string]: string[] } = post.reactions ? JSON.parse(post.reactions) : {};
         const userIdStr = user.id.toString();
 
         // Check if user has already reacted
         let userReaction = null;
         for (const [react, users] of Object.entries(reactions)) {
-            if (users.includes(userIdStr)) {
+            if (users.includes(userIdStr)) { // Now TypeScript knows `users` is a string array
                 userReaction = react;
                 break;
             }
