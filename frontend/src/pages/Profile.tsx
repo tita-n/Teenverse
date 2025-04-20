@@ -81,7 +81,6 @@ export default function Profile() {
                     }))
                 );
 
-                // Fetch stats if viewing own profile
                 if (user && user.username === username) {
                     try {
                         const statsRes = await axios.get("/api/get-user-stats", {
@@ -104,7 +103,6 @@ export default function Profile() {
                     }
                 }
 
-                // Fetch comments for posts
                 const newComments: { [postId: number]: CommentType[] } = {};
                 for (const post of res.data.posts) {
                     try {
@@ -119,7 +117,13 @@ export default function Profile() {
                 setComments(newComments);
             } catch (err) {
                 console.error("Error fetching profile:", err);
-                setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
+                if (err.response?.status === 401 || err.response?.status === 403) {
+                    setMessage("Session expired. Please log in again.");
+                    // Optionally redirect to login
+                    // window.location.href = "/login";
+                } else {
+                    setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
+                }
             }
         };
 
@@ -170,7 +174,9 @@ export default function Profile() {
             <Navigation />
             <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
                 <div className="max-w-2xl mx-auto">
-                    {message && <p className="text-center text-red-500 mb-6">{message}</p>}
+                    {message && (
+                        <p className="text-center text-red-500 mb-6 text-lg font-semibold">{message}</p>
+                    )}
                     {profile ? (
                         <>
                             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">
@@ -269,10 +275,8 @@ export default function Profile() {
                             </div>
                         </>
                     ) : (
-                        <p className="text-gray-600 text-center">Loading profile...</p>
+                        <p className="text-gray-600 text-center text-lg">Loading profile...</p>
                     )}
                 </div>
             </div>
         </div>
-    );
-        }
