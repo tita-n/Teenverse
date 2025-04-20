@@ -1,8 +1,12 @@
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useParams, Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
+
+// Define the backend URL (you can move this to an environment variable later)
+const BACKEND_URL = "https://teenverse.onrender.com";
 
 interface UserProfile {
     username: string;
@@ -66,7 +70,7 @@ export default function Profile() {
                 return;
             }
             try {
-                const res = await axios.get(`/api/users/profile/${username}`, {
+                const res = await axios.get(`${BACKEND_URL}/api/users/profile/${username}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (!res.data.user) {
@@ -83,13 +87,13 @@ export default function Profile() {
                 // Fetch stats if viewing own profile
                 if (user && user.username === username) {
                     try {
-                        const statsRes = await axios.get("/api/get-user-stats", {
+                        const statsRes = await axios.get(`${BACKEND_URL}/api/get-user-stats`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
-                        const snitchRes = await axios.get("/api/get-snitch-status", {
+                        const snitchRes = await axios.get(`${BACKEND_URL}/api/get-snitch-status`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
-                        const coinsRes = await axios.get("/api/get-coins", {
+                        const coinsRes = await axios.get(`${BACKEND_URL}/api/get-coins`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
                         setStats({
@@ -107,7 +111,7 @@ export default function Profile() {
                 const newComments: { [postId: number]: CommentType[] } = {};
                 for (const post of res.data.posts) {
                     try {
-                        const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
+                        const commentRes = await axios.get(`${BACKEND_URL}/api/posts/comments/${post.id}`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
                         newComments[post.id] = commentRes.data;
@@ -132,7 +136,7 @@ export default function Profile() {
         }
         try {
             await axios.post(
-                "/api/posts/comments",
+                `${BACKEND_URL}/api/posts/comments`,
                 {
                     email: user.email,
                     postId,
@@ -143,7 +147,7 @@ export default function Profile() {
                 }
             );
             setCommentContent({ ...commentContent, [postId]: "" });
-            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
+            const commentRes = await axios.get(`${BACKEND_URL}/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setComments({ ...comments, [postId]: commentRes.data });
