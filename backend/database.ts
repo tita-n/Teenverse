@@ -520,6 +520,34 @@ db.serialize(() => {
         }
     });
 
+   // Comments table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            pinned INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            FOREIGN KEY (post_id) REFERENCES posts(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Replies table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS replies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (comment_id) REFERENCES comments(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    `);
+
 
     // Seed shop items
     const initialItems = [
