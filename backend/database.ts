@@ -379,21 +379,21 @@ db.serialize(() => {
         )
     `);
 
-        // New table for Rants (anonymous)
+    // Rants table (anonymous)
     db.run(`
         CREATE TABLE IF NOT EXISTS rants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             content TEXT NOT NULL,
             category TEXT NOT NULL,
             upvotes INTEGER DEFAULT 0,
-            reactions TEXT DEFAULT '{}', -- JSON string to store reaction counts
+            reactions TEXT DEFAULT '{}',
             hugs INTEGER DEFAULT 0,
             ask_for_advice INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
-    // New table for Rant Comments (anonymous)
+    // Rant Comments table (anonymous)
     db.run(`
         CREATE TABLE IF NOT EXISTS rant_comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -403,7 +403,33 @@ db.serialize(() => {
             FOREIGN KEY(rant_id) REFERENCES rants(id)
         )
     `);
-     
+
+    // Shop Items table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS shop_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            image_url TEXT NOT NULL,
+            description TEXT,
+            is_limited BOOLEAN DEFAULT 0,
+            stock INTEGER DEFAULT NULL
+        )
+    `);
+
+    // User Inventory table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS user_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (item_id) REFERENCES shop_items(id)
+        )
+    `);
+
     // Add columns to users for special privileges
     db.run(`
         ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
@@ -429,8 +455,63 @@ db.serialize(() => {
         }
     });
 
+    // Seed shop items
+    const initialItems = [
+        { name: 'Sports Car', category: 'vehicle', price: 500, image_url: '/assets/shop/vehicles/vehicle_sportscar.png', description: 'A sleek virtual sports car for your profile.', is_limited: 0 },
+        { name: 'Motorcycle', category: 'vehicle', price: 350, image_url: '/assets/shop/vehicles/vehicle_motorcycle.png', description: 'A cool virtual bike for cruising.', is_limited: 0 },
+        { name: 'Skateboard', category: 'vehicle', price: 200, image_url: '/assets/shop/vehicles/vehicle_skateboard.png', description: 'Shred in style with this virtual board.', is_limited: 0 },
+        { name: 'Hoverboard', category: 'vehicle', price: 300, image_url: '/assets/shop/vehicles/vehicle_hoverboard.png', description: 'Glide into the future.', is_limited: 0 },
+        { name: 'Jetpack', category: 'vehicle', price: 800, image_url: '/assets/shop/vehicles/vehicle_jetpack.png', description: 'Soar above the rest.', is_limited: 0 },
+        { name: 'Vintage Van', category: 'vehicle', price: 450, image_url: '/assets/shop/vehicles/vehicle_vintagevan.png', description: 'Retro vibes on wheels.', is_limited: 0 },
+        { name: 'UFO', category: 'vehicle', price: 1000, image_url: '/assets/shop/vehicles/vehicle_ufo.png', description: 'Out-of-this-world transport.', is_limited: 1, stock: 20 },
+        { name: 'Bear', category: 'animal', price: 300, image_url: '/assets/shop/animals/animal_bear.png', description: 'A cuddly virtual bear companion.', is_limited: 0 },
+        { name: 'Lion', category: 'animal', price: 400, image_url: '/assets/shop/animals/animal_lion.png', description: 'A majestic virtual lion to show your strength.', is_limited: 0 },
+        { name: 'Wolf', category: 'animal', price: 350, image_url: '/assets/shop/animals/animal_wolf.png', description: 'A fierce virtual wolf for your squad.', is_limited: 0 },
+        { name: 'Panda', category: 'animal', price: 320, image_url: '/assets/shop/animals/animal_panda.png', description: 'An adorable virtual panda.', is_limited: 0 },
+        { name: 'Eagle', category: 'animal', price: 380, image_url: '/assets/shop/animals/animal_eagle.png', description: 'A soaring virtual eagle.', is_limited: 0 },
+        { name: 'Dragon', category: 'animal', price: 900, image_url: '/assets/shop/animals/animal_dragon.png', description: 'A mythical virtual dragon.', is_limited: 1, stock: 15 },
+        { name: 'Unicorn', category: 'animal', price: 600, image_url: '/assets/shop/animals/animal_unicorn.png', description: 'A magical unicorn for your squad.', is_limited: 0 },
+        { name: 'Sneakers', category: 'fashion', price: 250, image_url: '/assets/shop/fashion/fashion_sneakers.png', description: 'Fresh kicks for your avatar.', is_limited: 0 },
+        { name: 'Hoodie', category: 'fashion', price: 280, image_url: '/assets/shop/fashion/fashion_hoodie.png', description: 'Cozy virtual style.', is_limited: 0 },
+        { name: 'Sunglasses', category: 'fashion', price: 200, image_url: '/assets/shop/fashion/fashion_sunglasses.png', description: 'Cool shades for your vibe.', is_limited: 0 },
+        { name: 'Crown', category: 'fashion', price: 450, image_url: '/assets/shop/fashion/fashion_crown.png', description: 'Rule the platform with this crown.', is_limited: 0 },
+        { name: 'Cape', category: 'fashion', price: 400, image_url: '/assets/shop/fashion/fashion_cape.png', description: 'A heroic virtual cape.', is_limited: 0 },
+        { name: 'Glow-in-the-Dark Jacket', category: 'fashion', price: 550, image_url: '/assets/shop/fashion/fashion_glowjacket.png', description: 'Light up the night.', is_limited: 0 },
+        { name: 'Headphones', category: 'accessory', price: 220, image_url: '/assets/shop/accessories/accessory_headphones.png', description: 'Jam out in style.', is_limited: 0 },
+        { name: 'Smartwatch', category: 'accessory', price: 260, image_url: '/assets/shop/accessories/accessory_smartwatch.png', description: 'Stay connected virtually.', is_limited: 0 },
+        { name: 'Neon Sword', category: 'accessory', price: 350, image_url: '/assets/shop/accessories/accessory_neonsword.png', description: 'A glowing blade for battles.', is_limited: 0 },
+        { name: 'Magic Wand', category: 'accessory', price: 300, image_url: '/assets/shop/accessories/accessory_magicwand.png', description: 'Cast virtual spells.', is_limited: 0 },
+        { name: 'Holographic Shield', category: 'accessory', price: 420, image_url: '/assets/shop/accessories/accessory_holographicshield.png', description: 'Defend in style.', is_limited: 0 },
+        { name: 'Galaxy Background', category: 'flair', price: 700, image_url: '/assets/shop/flair/flair_galaxybackground.png', description: 'A cosmic profile background.', is_limited: 1, stock: 30 },
+        { name: 'Cityscape Background', category: 'flair', price: 650, image_url: '/assets/shop/flair/flair_cityscapebackground.png', description: 'Urban vibes for your profile.', is_limited: 0 },
+        { name: 'Flame Border', category: 'flair', price: 400, image_url: '/assets/shop/flair/flair_flameborder.png', description: 'A fiery profile border.', is_limited: 0 },
+        { name: 'Ice Border', category: 'flair', price: 400, image_url: '/assets/shop/flair/flair_iceborder.png', description: 'A cool profile border.', is_limited: 0 },
+        { name: 'Custom Emoji', category: 'flair', price: 150, image_url: '/assets/shop/flair/flair_customemoji.png', description: 'Express yourself uniquely.', is_limited: 0 },
+        { name: 'Squad Banner', category: 'squad', price: 500, image_url: '/assets/shop/squad/squad_banner.png', description: 'Customize your squad’s look.', is_limited: 0 },
+        { name: 'Victory Dance Animation', category: 'squad', price: 600, image_url: '/assets/shop/squad/squad_victorydance.png', description: 'Celebrate squad wins.', is_limited: 0 },
+        { name: 'Team Logo', category: 'squad', price: 450, image_url: '/assets/shop/squad/squad_teamlogo.png', description: 'Brand your squad.', is_limited: 0 },
+        { name: 'Microphone', category: 'battle', price: 200, image_url: '/assets/shop/battle/battle_microphone.png', description: 'Dominate rap battles.', is_limited: 0 },
+        { name: 'Dance Floor', category: 'battle', price: 300, image_url: '/assets/shop/battle/battle_dancefloor.png', description: 'Own the dance-offs.', is_limited: 0 },
+        { name: 'Meme Frame', category: 'battle', price: 150, image_url: '/assets/shop/battle/battle_memeframe.png', description: 'Frame your memes in Hype Battles.', is_limited: 0 },
+    ];
+
+    initialItems.forEach(item => {
+        db.run(
+            `INSERT OR IGNORE INTO shop_items (name, category, price, image_url, description, is_limited, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [item.name, item.category, item.price, item.image_url, item.description, item.is_limited, item.stock],
+            (err) => {
+                if (err) console.error(`Error seeding item ${item.name}:`, err);
+            }
+        );
+    });
+
     // Add index for developer_picks
     db.run("CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)");
+
+    // Add indices for shop tables
+    db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)");
 
     // Set creator_badge and add to developer_picks for restorationmichael3@gmail.com
     db.get(
