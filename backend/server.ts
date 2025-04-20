@@ -10,6 +10,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import { User, ShopItem } from './types'; // Import interfaces
 import { InventoryItem } from './types'; // Import interface
+import express, { Request, Response } from 'express';
 
 dotenv.config();
 
