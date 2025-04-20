@@ -346,10 +346,19 @@ router.post("/comments", async (req: express.Request, res: express.Response) => 
         });
         if (!user) return res.status(404).json({ message: "User not found" });
 
+        // Validate postId exists
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM posts WHERE id = ?", [parseInt(postId)], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
+
         await new Promise<void>((resolve, reject) => {
             db.run(
                 "INSERT INTO comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
-                [postId, user.id, content, new Date().toISOString()],
+                [parseInt(postId), user.id, content, new Date().toISOString()],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -358,7 +367,8 @@ router.post("/comments", async (req: express.Request, res: express.Response) => 
         });
         res.json({ message: "Comment added successfully" });
     } catch (err) {
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Error adding comment:", err); // Log the error for debugging
+        res.status(500).json({ message: "Internal server error: " + err.message });
     }
 });
 
