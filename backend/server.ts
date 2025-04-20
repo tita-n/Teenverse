@@ -17,7 +17,7 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(cors());
-app.use("/api/users", usersRouter);
+app.use("/api/users", authenticateToken, usersRouter);
 
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "teenverse_secret";
