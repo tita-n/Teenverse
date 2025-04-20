@@ -2829,21 +2829,27 @@ app.post('/api/shop/purchase', authenticateToken, async (req: Request, res: Resp
   }
 });
 
-app.get('/api/user/inventory', authenticateToken, async (req, res) => {
+app.get('/api/user/inventory', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email } = req.user;
-    const inventory = await new Promise((resolve, reject) => {
+    const { email } = req.user as { email: string }; // Type assertion for req.user
+    if (!email) {
+      res.status(401).json({ message: 'Unauthorized: Missing email' });
+      return;
+    }
+
+    const inventory = await new Promise<InventoryItem[]>((resolve, reject) => {
       db.all(
         'SELECT ui.*, si.name, si.category, si.image_url, si.description FROM user_inventory ui JOIN shop_items si ON ui.item_id = si.id WHERE ui.user_id = (SELECT id FROM users WHERE email = ?)',
         [email],
-        (err, rows) => {
+        (err: Error | null, rows: InventoryItem[]) => {
           if (err) reject(err);
           resolve(rows);
         }
       );
     });
+
     res.json(inventory);
-  } catch (err) {
+  } catch (err: unknown) {
     console.error(`[${new Date().toISOString()}] Fetch inventory error:`, err);
     res.status(500).json({ message: 'Internal server error' });
   }
