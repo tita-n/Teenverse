@@ -2740,6 +2740,92 @@ app.get("/api/user-vote-status", authenticateToken, async (req: express.Request,
     }
 });
 
+app.get('/api/shop/items', authenticateToken, async (req, res) => {
+  try {
+    const items = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM shop_items WHERE stock IS NULL OR stock > 0', [], (err, rows) => {
+        if (err) reject(err);
+        resolve(rows);
+      });
+    });
+    res.json(items);
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Fetch shop items error:`, err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/shop/purchase', authenticateToken, async (req, res) => {
+  try {
+    const { email, itemId } = req.body;
+    if (req.user.email !== email) {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+    const user = await new Promise((resolve, reject) => {
+      db.get('SELECT id, coins FROM users WHERE email = ?', [email], (err, row) => {
+        if (err) reject(err);
+        resolve(row);
+      });
+    });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const item = await new Promise((resolve, reject) => {
+      db.get('SELECT * FROM shop_items WHERE id = ? AND (stock IS NULL OR stock > 0)', [itemId], (err, row) => {
+        if (err) reject(err);
+        resolve(row);
+      });
+    });
+    if (!item) return res.status(404).json({ message: 'Item not found or out of stock' });
+    if (user.coins < item.price) {
+      return res.status(400).json({ message: 'Insufficient coins' });
+    }
+    const newCoins = user.coins - item.price;
+    await new Promise((resolve, reject) => {
+      db.run('UPDATE users SET coins = ? WHERE id = ?', [newCoins, user.id], (err) => {
+        if (err) reject(err);
+        resolve();
+      });
+    });
+    await new Promise((resolve, reject) => {
+      db.run('INSERT INTO user_inventory (user_id, item_id) VALUES (?, ?)', [user.id, itemId], (err) => {
+        if (err) reject(err);
+        resolve();
+      });
+    });
+    if (item.is_limited) {
+      await new Promise((resolve, reject) => {
+        db.run('UPDATE shop_items SET stock = stock - 1 WHERE id = ?', [itemId], (err) => {
+          if (err) reject(err);
+          resolve();
+        });
+      });
+    }
+    res.json({ message: `Purchased ${item.name}!`, newCoins });
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Purchase item error:`, err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/user/inventory', authenticateToken, async (req, res) => {
+  try {
+    const { email } = req.user;
+    const inventory = await new Promise((resolve, reject) => {
+      db.all(
+        'SELECT ui.*, si.name, si.category, si.image_url, si.description FROM user_inventory ui JOIN shop_items si ON ui.item_id = si.id WHERE ui.user_id = (SELECT id FROM users WHERE email = ?)',
+        [email],
+        (err, rows) => {
+          if (err) reject(err);
+          resolve(rows);
+        }
+      );
+    });
+    res.json(inventory);
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Fetch inventory error:`, err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Update the /api/determine-showdown-date endpoint to store the date correctly
 app.get("/api/determine-showdown-date", authenticateToken, async (req: express.Request, res: express.Response) => {
     try {
