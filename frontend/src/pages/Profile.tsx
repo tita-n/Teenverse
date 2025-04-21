@@ -5,7 +5,6 @@ import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
 
-// Updated UserProfile interface to include coins, rank, and level
 interface UserProfile {
     username: string;
     verified: number;
@@ -167,6 +166,33 @@ export default function Profile() {
         setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
     };
 
+    const handleStartDM = async () => {
+        if (!user || !token || !profile?.username) {
+            setMessage("Please log in to send a DM. Redirecting to login...");
+            setTimeout(() => navigate("/login"), 2000);
+            return;
+        }
+        try {
+            const response = await axios.post(
+                "/api/dms/send",
+                {
+                    email: user.email,
+                    recipientUsername: profile.username,
+                    content: "Hey, let's chat!",
+                    isGhostBomb: false,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            const { conversationId } = response.data;
+            navigate(`/chat/${conversationId}`, { state: { otherUsername: profile.username } });
+        } catch (err) {
+            console.error("Error starting DM:", err);
+            setMessage("Failed to start DM: " + (err.response?.data?.message || err.message));
+        }
+    };
+
     if (!user || !token) {
         return (
             <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "lightgray" }}>
@@ -188,15 +214,31 @@ export default function Profile() {
                 )}
                 {profile ? (
                     <>
-                        <h1 style={{ fontSize: "2rem", fontWeight: "bold", color: "black", marginBottom: "20px" }}>
-                            {profile.username}'s Profile{" "}
-                            {profile.verified ? (
-                                <span style={{ display: "inline-block", backgroundColor: "black", color: "white", borderRadius: "50%", width: "20px", height: "20px", textAlign: "center", lineHeight: "20px", fontSize: "12px" }}>
-                                    ✓
-                                </span>
-                            ) : null}
-                        </h1>
-                        {/* Add profile stats section for all users */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <h1 style={{ fontSize: "2rem", fontWeight: "bold", color: "black", marginBottom: "20px" }}>
+                                {profile.username}'s Profile{" "}
+                                {profile.verified ? (
+                                    <span style={{ display: "inline-block", backgroundColor: "black", color: "white", borderRadius: "50%", width: "20px", height: "20px", textAlign: "center", lineHeight: "20px", fontSize: "12px" }}>
+                                        ✓
+                                    </span>
+                                ) : null}
+                            </h1>
+                            {user.username !== profile.username && (
+                                <button
+                                    onClick={handleStartDM}
+                                    style={{
+                                        background: "linear-gradient(to right, blue, darkblue)",
+                                        color: "white",
+                                        padding: "8px 16px",
+                                        borderRadius: "8px",
+                                        border: "none",
+                                        cursor: "pointer",
+                                    }}
+                                >
+                                    Send DM
+                                </button>
+                            )}
+                        </div>
                         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
                             <h2 style={{ fontSize: "18px", fontWeight: "bold", color: "black", marginBottom: "10px" }}>
                                 Profile Stats
