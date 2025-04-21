@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
 
-// Define the backend URL (you can move this to an environment variable later)
-const BACKEND_URL = "https://teenverse.onrender.com";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 interface UserProfile {
     username: string;
@@ -54,7 +53,8 @@ interface Stats {
 
 export default function Profile() {
     const { username } = useParams<{ username: string }>();
-    const { user, token } = useAuth();
+    const { user, token } = useAuth(); // Removed setToken since we’re redirecting
+    const navigate = useNavigate();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [posts, setPosts] = useState<Post[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
@@ -66,25 +66,40 @@ export default function Profile() {
     useEffect(() => {
         const fetchProfile = async () => {
             if (!token || !username) {
-                setMessage("Missing token or username.");
+                setMessage("Missing token or username. Redirecting to login...");
+                setTimeout(() => navigate("/login"), 2000);
                 return;
             }
             try {
-                const res = await axios.get(`${BACKEND_URL}/api/users/profile/${username}`, {
+                console.log("Fetching profile for username:", username);
+                console.log("Using token:", token);
+                const profileResponse = await axios.get(`${BACKEND_URL}/api/users/profile/${username}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                if (!res.data.user) {
-                    throw new Error("User data not found in response");
+
+                console.log("Profile API response:", profileResponse.data);
+
+                const userData = profileResponse.data.user || profileResponse.data;
+                if (!userData || !userData.username || typeof userData.verified === "undefined") {
+                    throw new Error("Invalid user data in response");
                 }
-                setProfile(res.data.user);
+                setProfile(userData);
+
+                const fetchedPosts = Array.isArray(profileResponse.data.posts) ? profileResponse.data.posts : [];
                 setPosts(
-                    res.data.posts.map((post: Post) => ({
-                        ...post,
-                        reactions: post.reactions ? JSON.parse(post.reactions) : {},
-                    }))
+                    fetchedPosts.map((post: Post) => {
+                        let parsedReactions = {};
+                        try {
+                            parsedReactions = post.reactions && typeof post.reactions === "string"
+                                ? JSON.parse(post.reactions)
+                                : {};
+                        } catch (err) {
+                            console.error(`Error parsing reactions for post ${post.id}:`, err);
+                        }
+                        return { ...post, reactions: parsedReactions };
+                    })
                 );
 
-                // Fetch stats if viewing own profile
                 if (user && user.username === username) {
                     try {
                         const statsRes = await axios.get(`${BACKEND_URL}/api/get-user-stats`, {
@@ -96,6 +111,9 @@ export default function Profile() {
                         const coinsRes = await axios.get(`${BACKEND_URL}/api/get-coins`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
+                        console.log("Stats response:", statsRes.data);
+                        console.log("Snitch response:", snitchRes.data);
+                        console.log("Coins response:", coinsRes.data);
                         setStats({
                             ...statsRes.data,
                             isSnitch: snitchRes.data.isSnitch,
@@ -107,14 +125,14 @@ export default function Profile() {
                     }
                 }
 
-                // Fetch comments for posts
                 const newComments: { [postId: number]: CommentType[] } = {};
-                for (const post of res.data.posts) {
+                for (const post of fetchedPosts) {
                     try {
                         const commentRes = await axios.get(`${BACKEND_URL}/api/posts/comments/${post.id}`, {
                             headers: { Authorization: `Bearer ${token}` },
                         });
-                        newComments[post.id] = commentRes.data;
+                        console.log(`Comments for post ${post.id}:`, commentRes.data);
+                        newComments[post.id] = commentRes.data || [];
                     } catch (commentErr) {
                         console.error(`Error fetching comments for post ${post.id}:`, commentErr);
                     }
@@ -122,16 +140,22 @@ export default function Profile() {
                 setComments(newComments);
             } catch (err) {
                 console.error("Error fetching profile:", err);
-                setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
+                if (err.response?.status === 401 || err.response?.status === 403) {
+                    setMessage("Session expired. Redirecting to login...");
+                    setTimeout(() => navigate("/login"), 2000);
+                } else {
+                    setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
+                }
             }
         };
 
         fetchProfile();
-    }, [username, user, token]);
+    }, [username, user, token, navigate]);
 
     const handleComment = async (postId: number) => {
         if (!user || !token) {
-            setMessage("Please log in to comment.");
+            setMessage("Please log in to comment. Redirecting to login...");
+            setTimeout(() => navigate("/login"), 2000);
             return;
         }
         try {
@@ -152,6 +176,7 @@ export default function Profile() {
             });
             setComments({ ...comments, [postId]: commentRes.data });
         } catch (err) {
+            console.error("Error adding comment:", err);
             setMessage("Error adding comment: " + (err.response?.data?.message || err.message));
         }
     };
@@ -173,7 +198,9 @@ export default function Profile() {
             <Navigation />
             <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
                 <div className="max-w-2xl mx-auto">
-                    {message && <p className="text-center text-red-500 mb-6">{message}</p>}
+                    {message && (
+                        <p className="text-center text-red-500 mb-6 text-lg font-semibold">{message}</p>
+                    )}
                     {profile ? (
                         <>
                             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">
@@ -272,7 +299,7 @@ export default function Profile() {
                             </div>
                         </>
                     ) : (
-                        <p className="text-gray-600 text-center">Loading profile...</p>
+                        <p className="text-gray-600 text-center text-lg">Loading profile...</p>
                     )}
                 </div>
             </div>
