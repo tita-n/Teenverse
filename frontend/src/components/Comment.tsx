@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 
@@ -12,7 +12,7 @@ interface Comment {
     pinned: number;
     replies: Reply[];
     likes: number;
-    verified?: number; // Add verified field
+    verified?: number;
 }
 
 interface Reply {
@@ -22,7 +22,7 @@ interface Reply {
     username: string;
     content: string;
     created_at: string;
-    verified?: number; // Add verified field
+    verified?: number;
 }
 
 interface CommentProps {
@@ -38,12 +38,13 @@ interface CommentProps {
 export default function Comment({ comment, postId, user, token, onCommentLike, onPinComment, onReply }: CommentProps) {
     const [replyContent, setReplyContent] = useState("");
     const [showReplyInput, setShowReplyInput] = useState(false);
+    const [commentVerified, setCommentVerified] = useState<number | undefined>(comment.verified);
+    const [repliesVerified, setRepliesVerified] = useState<{ [replyId: number]: number }>({});
 
-    // Fetch verified status for comment and replies
     const fetchVerifiedStatus = async (username: string) => {
         try {
             const res = await axios.get(`/api/users/profile/${username}`);
-            return res.data.user.verified;
+            return res.data.user.verified || 0;
         } catch (err) {
             console.error("Error fetching verified status:", err);
             return 0;
@@ -52,19 +53,25 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
 
     useEffect(() => {
         const updateVerifiedStatus = async () => {
-            // Fetch verified status for the comment
-            const commentVerified = await fetchVerifiedStatus(comment.username);
-            comment.verified = commentVerified;
+            try {
+                // Fetch verified status for the comment
+                const verified = await fetchVerifiedStatus(comment.username);
+                setCommentVerified(verified);
 
-            // Fetch verified status for each reply
-            for (const reply of comment.replies) {
-                const replyVerified = await fetchVerifiedStatus(reply.username);
-                reply.verified = replyVerified;
+                // Fetch verified status for each reply
+                const verifiedStatuses: { [replyId: number]: number } = {};
+                for (const reply of comment.replies) {
+                    const replyVerified = await fetchVerifiedStatus(reply.username);
+                    verifiedStatuses[reply.id] = replyVerified;
+                }
+                setRepliesVerified(verifiedStatuses);
+            } catch (err) {
+                console.error("Error updating verified statuses:", err);
             }
         };
 
         updateVerifiedStatus();
-    }, [comment]);
+    }, [comment, fetchVerifiedStatus]);
 
     const handleReplySubmit = () => {
         if (replyContent.trim()) {
@@ -81,7 +88,7 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                     <Link to={`/profile/${comment.username}`}>
                         <p className="font-semibold text-gray-800 inline">
                             {comment.username}{" "}
-                            {comment.verified ? (
+                            {commentVerified ? (
                                 <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
                                     ✓
                                 </span>
@@ -104,7 +111,7 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                         >
                             Reply
                         </button>
-                        {user?.id === comment.post_id && !comment.pinned && (
+                        {user?.id === comment.user_id && !comment.pinned && (
                             <button
                                 onClick={() => onPinComment(comment.id, postId)}
                                 className="text-green-600 hover:text-green-800 text-sm"
@@ -148,7 +155,7 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                             <Link to={`/profile/${reply.username}`}>
                                 <p className="font-semibold text-gray-800 text-sm inline">
                                     {reply.username}{" "}
-                                    {reply.verified ? (
+                                    {repliesVerified[reply.id] ? (
                                         <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
                                             ✓
                                         </span>
