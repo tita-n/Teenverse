@@ -8,9 +8,10 @@ import usersRouter from "./routes/users"; // Add this import
 import { db } from "./database";
 import http from 'http';
 import { Server } from 'socket.io';
-import { User, ShopItem } from './types'; // Import interfaces
+import { User, ShopItem, RouteDependencies } from './types'; // Import interfaces
 import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
+import dmRoutes from "./routes/dms"; // Add this
 
 dotenv.config();
 
