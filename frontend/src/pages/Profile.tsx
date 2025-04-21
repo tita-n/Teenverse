@@ -5,9 +5,13 @@ import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
 
+// Updated UserProfile interface to include coins, rank, and level
 interface UserProfile {
     username: string;
     verified: number;
+    coins: number;
+    rank: string;
+    level: number;
 }
 
 interface Post {
@@ -41,21 +45,12 @@ interface Reply {
     created_at: string;
 }
 
-interface Stats {
-    xp: number;
-    level: number;
-    rank: string;
-    coins: number;
-    isSnitch: boolean;
-}
-
 export default function Profile() {
     const { username } = useParams<{ username: string }>();
     const { user, token } = useAuth();
     const navigate = useNavigate();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [posts, setPosts] = useState<Post[]>([]);
-    const [stats, setStats] = useState<Stats | null>(null);
     const [message, setMessage] = useState("");
     const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
@@ -103,31 +98,6 @@ export default function Profile() {
                         return { ...post, reactions: parsedReactions };
                     })
                 );
-
-                if (user && user.username === username) {
-                    try {
-                        const statsRes = await axios.get(`/api/get-user-stats`, {
-                            headers: { Authorization: `Bearer ${token}` },
-                        });
-                        const snitchRes = await axios.get(`/api/get-snitch-status`, {
-                            headers: { Authorization: `Bearer ${token}` },
-                        });
-                        const coinsRes = await axios.get(`/api/get-coins`, {
-                            headers: { Authorization: `Bearer ${token}` },
-                        });
-                        console.log("Stats response:", statsRes.data);
-                        console.log("Snitch response:", snitchRes.data);
-                        console.log("Coins response:", coinsRes.data);
-                        setStats({
-                            ...statsRes.data,
-                            isSnitch: snitchRes.data.isSnitch,
-                            coins: coinsRes.data.coins,
-                        });
-                    } catch (statsErr) {
-                        console.error("Error fetching stats:", statsErr);
-                        setMessage("Error fetching user stats: " + (statsErr.response?.data?.message || statsErr.message));
-                    }
-                }
 
                 const newComments: { [postId: number]: CommentType[] } = {};
                 for (const post of fetchedPosts) {
@@ -226,18 +196,15 @@ export default function Profile() {
                                 </span>
                             ) : null}
                         </h1>
-                        {stats && user.username === username && (
-                            <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
-                                <h2 style={{ fontSize: "18px", fontWeight: "bold", color: "black", marginBottom: "10px" }}>
-                                    Stats
-                                </h2>
-                                <p>XP: {stats.xp}</p>
-                                <p>Level: {stats.level}</p>
-                                <p>Rank: {stats.rank}</p>
-                                <p>Coins: {stats.coins}</p>
-                                <p>Snitch Status: {stats.isSnitch ? "Snitch" : "Not a Snitch"}</p>
-                            </div>
-                        )}
+                        {/* Add profile stats section for all users */}
+                        <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
+                            <h2 style={{ fontSize: "18px", fontWeight: "bold", color: "black", marginBottom: "10px" }}>
+                                Profile Stats
+                            </h2>
+                            <p>Level: {profile.level}</p>
+                            <p>Rank: {profile.rank}</p>
+                            <p>Coins: {profile.coins}</p>
+                        </div>
                         <div style={{ marginTop: "20px" }}>
                             {posts.length > 0 ? (
                                 posts.map((post) => (
