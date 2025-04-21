@@ -15,7 +15,7 @@ import HallOfFame from "./pages/HallOfFame";
 import Shop from './pages/Shop';
 import CreatePost from "./pages/CreatePost";
 import Analytics from "./pages/Analytics";
-import UltimateShowdown from "./pages/UltimateShowdown"; // Add this import
+import UltimateShowdown from "./pages/UltimateShowdown";
 import { AuthProvider } from "./hooks/useAuth";
 
 export default function App() {
@@ -29,7 +29,7 @@ export default function App() {
                     <Route path="/rant-zone" element={<RantZone />} />
                     <Route path="/game-squad" element={<GameSquad />} />
                     <Route path="/squad-details/:squadId" element={<SquadDetails />} />
-                    <Route path="/profile" element={<Profile />} />
+                    <Route path="/profile/:username" element={<Profile />} /> {/* Updated route */}
                     <Route path="/control-panel" element={<ControlPanel />} />
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
@@ -39,7 +39,9 @@ export default function App() {
                     <Route path="/hall-of-fame" element={<HallOfFame />} />
                     <Route path="/create-post" element={<CreatePost />} />
                     <Route path="/analytics" element={<Analytics />} />
-                    <Route path="/ultimate-showdown" element={<UltimateShowdown />} /> {/* Add this route */}
+                    <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
+                    {/* Optional: Add a catch-all route for debugging */}
+                    <Route path="*" element={<div>404 - Page Not Found</div>} />
                 </Routes>
             </Router>
         </AuthProvider>
