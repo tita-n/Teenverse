@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
@@ -158,14 +158,6 @@ export default function Profile() {
         fetchProfile();
     }, [username, user, token, navigate]);
 
-    useEffect(() => {
-        console.log("Profile state updated:", profile);
-    }, [profile]);
-
-    useEffect(() => {
-        console.log("Posts state updated:", posts);
-    }, [posts]);
-
     const handleComment = async (postId: number) => {
         if (!user || !token) {
             setMessage("Please log in to comment. Redirecting to login...");
@@ -201,128 +193,121 @@ export default function Profile() {
 
     if (!user || !token) {
         return (
-            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "lightgray" }}>
-                <div style={{ color: "red", fontSize: "20px", textAlign: "center" }}>
-                    Please log in to view profiles.
-                </div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center text-red-500 text-xl">Please log in to view profiles.</div>
             </div>
         );
     }
 
     return (
-        <div style={{ backgroundColor: "lightblue", minHeight: "100vh", padding: "20px" }}>
+        <div>
             <Navigation />
-            <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-                {message && (
-                    <p style={{ color: "red", textAlign: "center", fontSize: "18px", fontWeight: "bold", marginBottom: "20px" }}>
-                        {message}
-                    </p>
-                )}
-                {profile ? (
-                    <>
-                        <h1 style={{ fontSize: "2rem", fontWeight: "bold", color: "black", marginBottom: "20px" }}>
-                            {profile.username}'s Profile{" "}
-                            {profile.verified ? (
-                                <span style={{ display: "inline-block", backgroundColor: "black", color: "white", borderRadius: "50%", width: "20px", height: "20px", textAlign: "center", lineHeight: "20px", fontSize: "12px" }}>
-                                    ✓
-                                </span>
-                            ) : null}
-                        </h1>
-                        {stats && user.username === username && (
-                            <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
-                                <h2 style={{ fontSize: "18px", fontWeight: "bold", color: "black", marginBottom: "10px" }}>
-                                    Stats
-                                </h2>
-                                <p>XP: {stats.xp}</p>
-                                <p>Level: {stats.level}</p>
-                                <p>Rank: {stats.rank}</p>
-                                <p>Coins: {stats.coins}</p>
-                                <p>Snitch Status: {stats.isSnitch ? "Snitch" : "Not a Snitch"}</p>
-                            </div>
-                        )}
-                        <div style={{ marginTop: "20px" }}>
-                            {posts.length > 0 ? (
-                                posts.map((post) => (
-                                    <div key={post.id} style={{ backgroundColor: "white", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", padding: "20px", marginBottom: "20px" }}>
-                                        <p style={{ color: "gray", whiteSpace: "pre-wrap" }}>{post.content}</p>
-                                        <p style={{ color: "gray", fontSize: "14px", marginTop: "4px" }}>
-                                            {new Date(post.created_at).toLocaleString()}
-                                        </p>
-                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "12px", borderTop: "1px solid #e5e7eb", paddingTop: "8px" }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                                <span style={{ color: "blue" }}>👍 {post.likes || 0}</span>
-                                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                                    {Object.entries(post.reactions || {}).map(
-                                                        ([reaction, users]: [string, string[]]) => (
-                                                            users.length > 0 ? (
-                                                                <span key={reaction} style={{ fontSize: "14px", color: "gray" }}>
-                                                                    {reaction}: {users.length}
-                                                                </span>
-                                                            ) : null
-                                                        )
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => toggleComments(post.id)}
-                                                style={{ color: "blue", textDecoration: "underline", fontSize: "14px", background: "none", border: "none", cursor: "pointer" }}
-                                            >
-                                                {showComments[post.id]
-                                                    ? "Hide comments"
-                                                    : `View comments (${comments[post.id]?.length || 0})`}
-                                            </button>
-                                        </div>
-                                        {showComments[post.id] && (
-                                            <div style={{ marginTop: "20px" }}>
-                                                {comments[post.id]?.length > 0 ? (
-                                                    comments[post.id].map((comment) => (
-                                                        <Comment
-                                                            key={comment.id}
-                                                            comment={comment}
-                                                            postId={post.id}
-                                                            user={user}
-                                                            token={token}
-                                                            onCommentLike={() => {}}
-                                                            onPinComment={() => {}}
-                                                            onReply={() => {}}
-                                                        />
-                                                    ))
-                                                ) : (
-                                                    <p style={{ color: "gray", fontSize: "14px" }}>No comments yet.</p>
-                                                )}
-                                                <div style={{ marginTop: "20px" }}>
-                                                    <textarea
-                                                        value={commentContent[post.id] || ""}
-                                                        onChange={(e) =>
-                                                            setCommentContent({
-                                                                ...commentContent,
-                                                                [post.id]: e.target.value,
-                                                            })
-                                                        }
-                                                        placeholder="Add a comment..."
-                                                        style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid gray", outline: "none" }}
-                                                    />
-                                                    <button
-                                                        onClick={() => handleComment(post.id)}
-                                                        style={{ background: "linear-gradient(to right, blue, darkblue)", color: "white", padding: "8px 16px", borderRadius: "8px", marginTop: "8px", border: "none", cursor: "pointer" }}
-                                                    >
-                                                        Comment
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))
-                            ) : (
-                                <p style={{ color: "gray", textAlign: "center" }}>No posts yet.</p>
+            <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
+                <div className="max-w-2xl mx-auto">
+                    {message && (
+                        <p className="text-center text-red-500 mb-6 text-lg font-semibold">{message}</p>
+                    )}
+                    {profile ? (
+                        <>
+                            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-4">
+                                {profile.username}'s Profile{" "}
+                                {profile.verified ? (
+                                    <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                        ✓
+                                    </span>
+                                ) : null}
+                            </h1>
+                            {stats && user.username === username && (
+                                <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+                                    <h2 className="text-lg font-semibold text-gray-800 mb-2">Stats</h2>
+                                    <p>XP: {stats.xp}</p>
+                                    <p>Level: {stats.level}</p>
+                                    <p>Rank: {stats.rank}</p>
+                                    <p>Coins: {stats.coins}</p>
+                                    <p>Snitch Status: {stats.isSnitch ? "Snitch" : "Not a Snitch"}</p>
+                                </div>
                             )}
-                        </div>
-                    </>
-                ) : (
-                    <p style={{ color: "gray", textAlign: "center", fontSize: "18px" }}>
-                        Loading profile...
-                    </p>
-                )}
+                            <div className="space-y-6">
+                                {posts.length > 0 ? (
+                                    posts.map((post) => (
+                                        <div key={post.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                                            <p className="text-gray-700 whitespace-pre-wrap">{post.content}</p>
+                                            <p className="text-gray-500 text-sm mt-1">
+                                                {new Date(post.created_at).toLocaleString()}
+                                            </p>
+                                            <div className="flex items-center justify-between mt-3 border-t pt-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-blue-600">👍 {post.likes || 0}</span>
+                                                    <div className="flex items-center space-x-1">
+                                                        {Object.entries(post.reactions || {}).map(
+                                                            ([reaction, users]: [string, string[]]) =>
+                                                                users.length > 0 && (
+                                                                    <span key={reaction} className="text-sm text-gray-600">
+                                                                        {reaction}: {users.length}
+                                                                    </span>
+                                                                )
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => toggleComments(post.id)}
+                                                    className="text-indigo-600 hover:text-indigo-800 text-sm"
+                                                >
+                                                    {showComments[post.id]
+                                                        ? "Hide comments"
+                                                        : `View comments (${comments[post.id]?.length || 0})`}
+                                                </button>
+                                            </div>
+                                            {showComments[post.id] && (
+                                                <div className="mt-4">
+                                                    {comments[post.id]?.length > 0 ? (
+                                                        comments[post.id].map((comment) => (
+                                                            <Comment
+                                                                key={comment.id}
+                                                                comment={comment}
+                                                                postId={post.id}
+                                                                user={user}
+                                                                token={token}
+                                                                onCommentLike={() => {}}
+                                                                onPinComment={() => {}}
+                                                                onReply={() => {}}
+                                                            />
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-gray-600 text-sm">No comments yet.</p>
+                                                    )}
+                                                    <div className="mt-4">
+                                                        <textarea
+                                                            value={commentContent[post.id] || ""}
+                                                            onChange={(e) =>
+                                                                setCommentContent({
+                                                                    ...commentContent,
+                                                                    [post.id]: e.target.value,
+                                                                })
+                                                            }
+                                                            placeholder="Add a comment..."
+                                                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                        />
+                                                        <button
+                                                            onClick={() => handleComment(post.id)}
+                                                            className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
+                                                        >
+                                                            Comment
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-gray-600 text-center">No posts yet.</p>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <p className="text-gray-600 text-center text-lg">Loading profile...</p>
+                    )}
+                </div>
             </div>
         </div>
     );
