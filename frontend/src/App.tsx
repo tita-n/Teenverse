@@ -16,6 +16,8 @@ import Shop from './pages/Shop';
 import CreatePost from "./pages/CreatePost";
 import Analytics from "./pages/Analytics";
 import UltimateShowdown from "./pages/UltimateShowdown";
+import ChatList from "./pages/ChatList"; // Add this
+import ChatDetail from "./pages/ChatDetail"; // Add this
 import { AuthProvider } from "./hooks/useAuth";
 
 export default function App() {
@@ -29,7 +31,7 @@ export default function App() {
                     <Route path="/rant-zone" element={<RantZone />} />
                     <Route path="/game-squad" element={<GameSquad />} />
                     <Route path="/squad-details/:squadId" element={<SquadDetails />} />
-                    <Route path="/profile/:username" element={<Profile />} /> {/* Updated route */}
+                    <Route path="/profile/:username" element={<Profile />} />
                     <Route path="/control-panel" element={<ControlPanel />} />
                     <Route path="/news-feed" element={<NewsFeed />} />
                     <Route path="/buy-coins" element={<BuyCoins />} />
@@ -40,7 +42,8 @@ export default function App() {
                     <Route path="/create-post" element={<CreatePost />} />
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
-                    {/* Optional: Add a catch-all route for debugging */}
+                    <Route path="/chats" element={<ChatList />} /> {/* Add this */}
+                    <Route path="/chat/:conversationId" element={<ChatDetail />} /> {/* Add this */}
                     <Route path="*" element={<div>404 - Page Not Found</div>} />
                 </Routes>
             </Router>
