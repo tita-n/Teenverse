@@ -430,6 +430,35 @@ db.serialize(() => {
         )
     `);
 
+    // Conversations table (for DMs)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user1_id INTEGER NOT NULL,
+            user2_id INTEGER NOT NULL,
+            is_boosted INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user1_id) REFERENCES users(id),
+            FOREIGN KEY(user2_id) REFERENCES users(id),
+            UNIQUE(user1_id, user2_id),
+            UNIQUE(user2_id, user1_id)
+        )
+    `);
+
+    // Messages table (for DMs)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            sender_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_ghost_bomb INTEGER DEFAULT 0,
+            FOREIGN KEY(conversation_id) REFERENCES conversations(id),
+            FOREIGN KEY(sender_id) REFERENCES users(id)
+        )
+    `);
+
     // Add columns to users for special privileges
     db.run(`
         ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
@@ -520,7 +549,7 @@ db.serialize(() => {
         }
     });
 
-   // Comments table
+    // Comments table
     db.run(`
         CREATE TABLE IF NOT EXISTS comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -547,7 +576,6 @@ db.serialize(() => {
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     `);
-
 
     // Seed shop items
     const initialItems = [
@@ -596,6 +624,27 @@ db.serialize(() => {
     db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)");
 
+    // Add indices for performance
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_comment_replies_comment ON comment_replies(comment_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)");
+
+    // Add indices for chat tables
+    db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)");
+    db.run("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)");
+
     // Set creator_badge and add to developer_picks for restorationmichael3@gmail.com
     db.get(
         "SELECT id, username FROM users WHERE email = ?",
@@ -628,36 +677,19 @@ db.serialize(() => {
             }
         }
     );
+
+    // Initial setup for the next Ultimate Showdown
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    db.run(
+        "INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)",
+        [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]],
+        (err) => {
+            if (err) console.error("Error initializing showdown tournament:", err);
+        }
+    );
 });
-
-// Add indices for performance
-db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
-db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
-    // Add indices for new tables
-db.run("CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_commentosti_replies_comment ON comment_replies(comment_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
-db.run("CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)");
-
-
-// Initial setup for the next Ultimate Showdown
-const nextMonth = new Date();
-nextMonth.setMonth(nextMonth.getMonth() + 1);
-nextMonth.setDate(1);
-db.run(
-    "INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)",
-    [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]],
-    (err) => {
-        if (err) console.error("Error initializing showdown tournament:", err);
-    }
-);
 
 // Close database on process exit
 process.on("SIGINT", () => {
