@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
@@ -68,34 +69,17 @@ export default function Profile() {
 
             if (!token || !username || !user) {
                 setMessage("Missing token, username, or user data. Redirecting to login...");
-                setTimeout(() => navigate("/login"), 2000);
+                setTimeout(() => navigate("/"), 2000);
                 return;
             }
 
             try {
-                // Hardcode the API response for now
-                const profileResponse = {
-                    data: {
-                        user: {
-                            username: "titan",
-                            verified: 0,
-                        },
-                        posts: [
-                            {
-                                id: 1,
-                                user_id: 1,
-                                username: "titan",
-                                content: "Hi",
-                                mode: "main",
-                                likes: 0,
-                                created_at: "2025-04-21 00:10:52",
-                                reactions: "{}",
-                            },
-                        ],
-                    },
-                };
+                console.log("Fetching profile for username:", username);
+                const profileResponse = await axios.get(`/api/users/profile/${username}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
 
-                console.log("Profile API response (hardcoded):", profileResponse.data);
+                console.log("Profile API response:", profileResponse.data);
 
                 const userData = profileResponse.data.user || profileResponse.data;
                 if (!userData || !userData.username || typeof userData.verified === "undefined") {
@@ -120,11 +104,52 @@ export default function Profile() {
                     })
                 );
 
-                // Skip stats and comments for now to avoid additional API calls
-                setComments({ 1: [] }); // Mock empty comments for post ID 1
+                if (user && user.username === username) {
+                    try {
+                        const statsRes = await axios.get(`/api/get-user-stats`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        const snitchRes = await axios.get(`/api/get-snitch-status`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        const coinsRes = await axios.get(`/api/get-coins`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        console.log("Stats response:", statsRes.data);
+                        console.log("Snitch response:", snitchRes.data);
+                        console.log("Coins response:", coinsRes.data);
+                        setStats({
+                            ...statsRes.data,
+                            isSnitch: snitchRes.data.isSnitch,
+                            coins: coinsRes.data.coins,
+                        });
+                    } catch (statsErr) {
+                        console.error("Error fetching stats:", statsErr);
+                        setMessage("Error fetching user stats: " + (statsErr.response?.data?.message || statsErr.message));
+                    }
+                }
+
+                const newComments: { [postId: number]: CommentType[] } = {};
+                for (const post of fetchedPosts) {
+                    try {
+                        const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        console.log(`Comments for post ${post.id}:`, commentRes.data);
+                        newComments[post.id] = commentRes.data || [];
+                    } catch (commentErr) {
+                        console.error(`Error fetching comments for post ${post.id}:`, commentErr);
+                    }
+                }
+                setComments(newComments);
             } catch (err) {
-                console.error("Error processing profile:", err);
-                setMessage("Error processing profile: " + (err.response?.data?.message || err.message));
+                console.error("Error fetching profile:", err);
+                if (err.response?.status === 401 || err.response?.status === 403) {
+                    setMessage("Session expired. Redirecting to login...");
+                    setTimeout(() => navigate("/login"), 2000);
+                } else {
+                    setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
+                }
             }
         };
 
@@ -140,7 +165,32 @@ export default function Profile() {
     }, [posts]);
 
     const handleComment = async (postId: number) => {
-        setMessage("Comment functionality disabled while using hardcoded data.");
+        if (!user || !token) {
+            setMessage("Please log in to comment. Redirecting to login...");
+            setTimeout(() => navigate("/login"), 2000);
+            return;
+        }
+        try {
+            await axios.post(
+                `/api/posts/comments`,
+                {
+                    email: user.email,
+                    postId,
+                    content: commentContent[postId] || "",
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            setCommentContent({ ...commentContent, [postId]: "" });
+            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setComments({ ...comments, [postId]: commentRes.data });
+        } catch (err) {
+            console.error("Error adding comment:", err);
+            setMessage("Error adding comment: " + (err.response?.data?.message || err.message));
+        }
     };
 
     const toggleComments = (postId: number) => {
