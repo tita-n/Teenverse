@@ -148,7 +148,7 @@ export default function Profile() {
                 console.error("Error fetching profile:", err);
                 if (err.response?.status === 401 || err.response?.status === 403) {
                     setMessage("Session expired. Redirecting to login...");
-                    setTimeout(() => navigate("/login"), 2000);
+                    setTimeout(() => navigate("/"), 2000);
                 } else {
                     setMessage("Error fetching profile: " + (err.response?.data?.message || err.message));
                 }
