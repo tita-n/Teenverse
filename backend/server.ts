@@ -67,9 +67,15 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
 // Serve static files
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
+const routeDependencies: RouteDependencies = {
+    db,
+    SECRET_KEY
+};
+
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
+app.use("/api/dms", dmRoutes(routeDependencies)); // Add this
 
 // Socket.IO setup for real-time voting
 io.on('connection', (socket) => {
