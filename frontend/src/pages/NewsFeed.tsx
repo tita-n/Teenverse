@@ -81,41 +81,46 @@ export default function NewsFeed() {
     const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
     const commentsPerPage = 3;
 
-    const fetchPosts = useCallback(async () => {
-        if (!user || !token) return;
-        try {
-            setLoading(true);
-            const res = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=${offset}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const postsData = res.data.map((post: Post) => ({
-                ...post,
-                reactions: post.reactions ? JSON.parse(post.reactions) : {},
-                verified: post.verified,
-            }));
+    // Update fetchPosts to prevent appending duplicates
+const fetchPosts = useCallback(async () => {
+    if (!user || !token || !hasMore) return;
+    try {
+        setLoading(true);
+        const res = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=${offset}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const postsData = res.data.map((post: Post) => ({
+            ...post,
+            reactions: post.reactions ? JSON.parse(post.reactions) : {},
+            verified: post.verified,
+        }));
 
-            setPosts((prev) => [...prev, ...postsData]);
-            setHasMore(postsData.length === limit);
+        setPosts((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newPosts = postsData.filter((post: Post) => !existingIds.has(post.id));
+            return [...prev, ...newPosts];
+        });
+        setHasMore(postsData.length === limit);
 
-            // Fetch comments for new posts
-            const newComments: { [postId: number]: CommentType[] } = { ...comments };
-            for (const post of postsData) {
-                if (!newComments[post.id]) {
-                    const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    newComments[post.id] = commentRes.data;
-                    setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
-                }
+
+// Fetch comments for new posts
+        const newComments: { [postId: number]: CommentType[] } = { ...comments };
+        for (const post of postsData) {
+            if (!newComments[post.id]) {
+                const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                newComments[post.id] = commentRes.data;
+                setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
             }
-            setComments(newComments);
-        } catch (err) {
-            setMessage("Error fetching posts: " + (err.response?.data?.message || err.message));
-        } finally {
-            setLoading(false);
         }
-    }, [user, token, offset, comments]);
-
+        setComments(newComments);
+    } catch (err) {
+        setMessage("Error fetching posts: " + (err.response?.data?.message || err.message));
+    } finally {
+        setLoading(false);
+    }
+}, [user, token, offset, comments, hasMore]);
     useEffect(() => {
         fetchPosts();
     }, [fetchPosts]);
@@ -136,26 +141,26 @@ export default function NewsFeed() {
             fetchSquads();
         }
     }, [user, token]);
-
-    const postUpdate = async () => {
-        if (!user || !token) {
-            setMessage("Please log in to post.");
-            return;
-        }
-        try {
-            const res = await axios.post(
-                "/api/create-post",
-                {
-                    email: user.email,
-                    content,
-                    mode: "main",
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setMessage(res.data.message);
-            setContent("");
+    
+const postUpdate = async () => {
+    if (!user || !token) {
+        setMessage("Please log in to post.");
+        return;
+    }
+    try {
+        const res = await axios.post(
+            "/api/create-post",
+            {
+                email: user.email,
+                content,
+                mode: "main",
+            },
+            {
+                headers: { Authorization: `Bearer ${token}` },
+            }
+        );
+        setMessage(res.data.message);
+        setContent("");
             // Reset posts to fetch the latest
             setOffset(0);
             setPosts([]);
@@ -165,6 +170,23 @@ export default function NewsFeed() {
         }
     };
 
+// Fetch the latest posts without resetting offset
+        const newPostsRes = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const newPostsData = newPostsRes.data.map((post: Post) => ({
+            ...post,
+            reactions: post.reactions ? JSON.parse(post.reactions) : {},
+            verified: post.verified,
+        }));
+        setPosts(newPostsData); // Replace posts instead of appending
+        setOffset(0); // Reset offset for future fetches
+        setHasMore(newPostsData.length === limit);
+    } catch (err) {
+        setMessage("Error posting: " + (err.response?.data?.message || err.message));
+    }
+};
+ 
     const handleLike = async (postId: number) => {
         if (!user || !token) {
             setMessage("Please log in to like a post.");
