@@ -85,12 +85,13 @@ export default function Profile() {
                                                     <span className="text-blue-600">👍 {post.likes || 0}</span>
                                                     <div className="flex items-center space-x-1">
                                                         {Object.entries(post.reactions || {}).map(
-                                                            ([reaction, users]: [string, string[]]) =>
-                                                                users.length > 0 && (
+                                                            ([reaction, users]: [string, string[]]) => (
+                                                                users.length > 0 ? (
                                                                     <span key={reaction} className="text-sm text-gray-600">
                                                                         {reaction}: {users.length}
                                                                     </span>
-                                                                )
+                                                                ) : null
+                                                            )
                                                         )}
                                                     </div>
                                                 </div>
@@ -108,3 +109,5 @@ export default function Profile() {
                 </div>
             </div>
         </div>
+    );
+}
