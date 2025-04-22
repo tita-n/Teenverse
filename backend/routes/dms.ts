@@ -200,13 +200,6 @@ export default function dmRoutes({ db }: RouteDependencies) {
                 );
             });
 
-        // Notify the recipient
-        await createNotification(
-            recipientId,
-            "direct_message",
-            `${sender.username} sent you a message: "${content.slice(0, 50)}..."`,
-            conversationId
-        );
 
             res.json({ message: "Message sent successfully", conversationId: conversation.id });
         } catch (err) {
