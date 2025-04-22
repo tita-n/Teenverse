@@ -75,7 +75,7 @@ const routeDependencies: RouteDependencies = {
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
-app.use("/api/dms", dmRoutes(routeDependencies)); // Add this
+app.use("/api/dms", authenticateToken, dmRoutes(routeDependencies)); // Add this
 
 // Socket.IO setup for real-time voting
 io.on('connection', (socket) => {
