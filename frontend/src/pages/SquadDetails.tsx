@@ -13,7 +13,8 @@ export default function SquadDetails() {
     const [newMessage, setNewMessage] = useState("");
     const [matchTime, setMatchTime] = useState("");
     const [matchDescription, setMatchDescription] = useState("");
-    const [clipUrl, setClipUrl] = useState("");
+    const [clipFile, setClipFile] = useState<File | null>(null); // For the video file
+    const [clipPreview, setClipPreview] = useState<string | null>(null); // For previewing the video
     const [clipDescription, setClipDescription] = useState("");
     const [message, setMessage] = useState("");
     const [isMember, setIsMember] = useState(false);
@@ -95,6 +96,15 @@ export default function SquadDetails() {
         }
     }, [user, token, squadId]);
 
+    // Clean up the preview URL when the component unmounts or a new file is selected
+    useEffect(() => {
+        return () => {
+            if (clipPreview) {
+                URL.revokeObjectURL(clipPreview);
+            }
+        };
+    }, [clipPreview]);
+
     const handleSendMessage = async () => {
         if (!user || !token || !squadId) {
             setMessage("Please log in to send a message.");
@@ -158,28 +168,52 @@ export default function SquadDetails() {
             setMessage("Please log in to upload a clip.");
             return;
         }
-        if (!clipUrl || !clipDescription) {
-            setMessage("Please provide a clip URL and description.");
+        if (!clipFile || !clipDescription) {
+            setMessage("Please select a video file and provide a description.");
             return;
         }
+
+        const formData = new FormData();
+        formData.append("clip", clipFile);
+        formData.append("email", user.email);
+        formData.append("squadId", squadId);
+        formData.append("description", clipDescription);
+
         try {
-            const res = await axios.post("https://teenverse.onrender.com/api/game-clips", {
-                email: user.email,
-                squadId: parseInt(squadId),
-                clipUrl,
-                description: clipDescription
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
+            const res = await axios.post("https://teenverse.onrender.com/api/game-clips", formData, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "multipart/form-data",
+                },
             });
             setMessage(res.data.message);
-            setClipUrl("");
+            setClipFile(null);
             setClipDescription("");
+            if (clipPreview) {
+                URL.revokeObjectURL(clipPreview); // Clean up preview URL
+                setClipPreview(null);
+            }
             const clipsRes = await axios.get(`https://teenverse.onrender.com/api/game-clips/${squadId}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
             });
             setClips(clipsRes.data);
         } catch (err) {
             setMessage("Error uploading clip: " + (err.response?.data?.message || err.message));
+        }
+    };
+
+    // Handle file selection and create a preview URL
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files ? e.target.files[0] : null;
+        setClipFile(file);
+        if (clipPreview) {
+            URL.revokeObjectURL(clipPreview); // Clean up previous preview
+        }
+        if (file) {
+            const previewUrl = URL.createObjectURL(file);
+            setClipPreview(previewUrl);
+        } else {
+            setClipPreview(null);
         }
     };
 
@@ -314,15 +348,24 @@ export default function SquadDetails() {
                     <div className="bg-white p-6 rounded-lg shadow-lg mb-6">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4">Upload a Game Clip</h2>
                         <p className="text-gray-600 mb-4">
-                            Share your best gaming moments! Paste a URL (e.g., YouTube link) and add a description.
+                            Share your best gaming moments! Upload a video (max 90 seconds).
                         </p>
                         <input
-                            type="text"
-                            value={clipUrl}
-                            onChange={(e) => setClipUrl(e.target.value)}
-                            placeholder="Clip URL (e.g., YouTube link)"
+                            type="file"
+                            accept="video/*"
+                            onChange={handleFileChange}
                             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
                         />
+                        {clipPreview && (
+                            <div className="mb-4">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Preview:</h3>
+                                <video
+                                    src={clipPreview}
+                                    controls
+                                    className="w-full max-w-md rounded-lg"
+                                />
+                            </div>
+                        )}
                         <textarea
                             value={clipDescription}
                             onChange={(e) => setClipDescription(e.target.value)}
@@ -344,14 +387,11 @@ export default function SquadDetails() {
                                 <div key={clip.id} className="border-b py-4">
                                     <p className="text-gray-800 font-semibold">Uploaded by: {clip.username}</p>
                                     <p className="text-gray-600">{clip.description}</p>
-                                    <a
-                                        href={clip.clip_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 hover:underline"
-                                    >
-                                        Watch Clip
-                                    </a>
+                                    <video
+                                        src={clip.clip_url}
+                                        controls
+                                        className="w-full max-w-md mt-2 rounded-lg"
+                                    />
                                     <p className="text-gray-500 text-sm">{new Date(clip.created_at).toLocaleString()}</p>
                                 </div>
                             ))
@@ -363,4 +403,4 @@ export default function SquadDetails() {
             </div>
         </div>
     );
-                                                          }
+}
