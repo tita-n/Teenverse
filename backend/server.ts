@@ -125,21 +125,7 @@ const processVideo = (inputPath: string, outputPath: string): Promise<string> =>
                 return reject(new Error('Video duration exceeds 90 seconds'));
             }
 
-            // Compress video
-            ffmpeg(inputPath)
-                .output(outputPath)
-                .videoCodec('libx264')
-                .audioCodec('aac')
-                .size('1280x720') // Resize to 720p
-                .videoBitrate('1500k') // Lower bitrate for compression
-                .audioBitrate('128k')
-                .on('end', () => resolve(outputPath))
-                .on('error', (err) => reject(new Error('Error compressing video: ' + err.message)))
-                .run();
-        });
-    });
-};
-
+ 
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
@@ -1453,12 +1439,12 @@ app.get("/api/tournaments", authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req, res) => {
+app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req: Request, res: Response) => {
     try {
         const { email, squadId, description } = req.body;
         const file = req.file;
 
-        if (req.user.email !== email) {
+        if ((req as AuthenticatedRequest).user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
@@ -1478,7 +1464,7 @@ app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req
         });
 
         if (!user) {
-            fs.unlinkSync(file.path); // Clean up uploaded file
+            if (file) fs.unlinkSync(file.path);
             return res.status(404).json({ message: 'User not found' });
         }
 
@@ -1497,26 +1483,40 @@ app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req
         });
 
         if (!isMember && !isCreator) {
-            fs.unlinkSync(file.path); // Clean up uploaded file
+            if (file) fs.unlinkSync(file.path);
             return res.status(403).json({ message: 'You must be a member of this squad to upload a clip' });
         }
 
-        // Process video (check duration and compress)
-        const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
-        await processVideo(file.path, outputPath);
-
-        // Upload to Cloudinary
-        const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
-            resource_type: 'video',
-            folder: 'teenverse/game-clips',
-            timeout: 60000,
+        // Validate video duration using ffprobe
+        const metadata = await new Promise((resolve, reject) => {
+            ffmpeg.ffprobe(file.path, (err, metadata) => {
+                if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+                resolve(metadata);
+            });
         });
 
-        // Clean up temporary files
-        fs.unlinkSync(file.path);
-        fs.unlinkSync(outputPath);
+        const duration = metadata.format.duration;
+        if (!duration || duration > 90) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
+        }
 
-        // Store Cloudinary URL in database
+        // Upload directly to Cloudinary with transformations
+        const cloudinaryResult = await cloudinary.uploader.upload(file.path, {
+            resource_type: 'video',
+            folder: 'teenverse/game-clips',
+            timeout: 120000, // Increased timeout to 120 seconds
+            transformation: [
+                { width: 1280, height: 720, crop: 'scale' },
+                { quality: 'auto:low', fetch_format: 'auto' },
+                { video_codec: 'h264', bit_rate: '1500k' },
+                { audio_codec: 'aac', audio_bit_rate: '128k' }
+            ]
+        });
+
+        // Clean up the temporary file
+        if (file) fs.unlinkSync(file.path);
+
         const clipUrl = cloudinaryResult.secure_url;
         await new Promise<void>((resolve, reject) => {
             db.run(
@@ -1532,13 +1532,9 @@ app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req
         res.json({ message: 'Game clip uploaded successfully!', clipUrl });
     } catch (err) {
         if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path); // Clean up uploaded file on error
+            fs.unlinkSync(req.file.path);
         }
-        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath); // Clean up processed file on error
-        }
-        console.error(`[${new Date().toISOString()}] Upload clip error:`, err);
+        console.error(`[${new Date().toISOString()}] Upload clip error:`, err.stack || err);
         res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
