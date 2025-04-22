@@ -1463,41 +1463,74 @@ app.get("/api/tournaments", authenticateToken, async (req, res) => {
     }
 });
 
-app.post("/api/game-clips", authenticateToken, async (req, res) => {
+app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req, res) => {
     try {
-        const { email, squadId, clipUrl, description } = req.body;
+        const { email, squadId, description } = req.body;
+        const file = req.file;
+
         if (req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        if (!file) {
+            return res.status(400).json({ message: 'No video file uploaded' });
+        }
+
+        if (!squadId || !description) {
+            return res.status(400).json({ message: 'Squad ID and description are required' });
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+            db.get('SELECT id FROM users WHERE email = ?', [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!user) return res.status(404).json({ message: "User not found" });
+        if (!user) {
+            fs.unlinkSync(file.path); // Clean up uploaded file
+            return res.status(404).json({ message: 'User not found' });
+        }
 
         const isMember: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT squad_id FROM squad_members WHERE squad_id = ? AND user_id = ?", [squadId, user.id], (err, row) => {
+            db.get('SELECT squad_id FROM squad_members WHERE squad_id = ? AND user_id = ?', [squadId, user.id], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
         const isCreator: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM game_squads WHERE id = ? AND user_id = ?", [squadId, user.id], (err, row) => {
+            db.get('SELECT id FROM game_squads WHERE id = ? AND user_id = ?', [squadId, user.id], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!isMember && !isCreator) return res.status(403).json({ message: "You must be a member of this squad to upload a clip" });
+        if (!isMember && !isCreator) {
+            fs.unlinkSync(file.path); // Clean up uploaded file
+            return res.status(403).json({ message: 'You must be a member of this squad to upload a clip' });
+        }
 
+        // Process video (check duration and compress)
+        const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
+        await processVideo(file.path, outputPath);
+
+        // Upload to Cloudinary
+        const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
+            resource_type: 'video',
+            folder: 'teenverse/game-clips',
+            timeout: 60000,
+        });
+
+        // Clean up temporary files
+        fs.unlinkSync(file.path);
+        fs.unlinkSync(outputPath);
+
+        // Store Cloudinary URL in database
+        const clipUrl = cloudinaryResult.secure_url;
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO game_clips (squad_id, user_id, clip_url, description) VALUES (?, ?, ?, ?)",
+                'INSERT INTO game_clips (squad_id, user_id, clip_url, description) VALUES (?, ?, ?, ?)',
                 [squadId, user.id, clipUrl, description],
                 (err) => {
                     if (err) reject(err);
@@ -1506,18 +1539,26 @@ app.post("/api/game-clips", authenticateToken, async (req, res) => {
             );
         });
 
-        res.json({ message: "Game clip uploaded successfully!" });
+        res.json({ message: 'Game clip uploaded successfully!', clipUrl });
     } catch (err) {
-        res.status(500).json({ message: "Internal server error" });
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path); // Clean up uploaded file on error
+        }
+        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath); // Clean up processed file on error
+        }
+        console.error(`[${new Date().toISOString()}] Upload clip error:`, err);
+        res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
-app.get("/api/game-clips/:squadId", authenticateToken, async (req, res) => {
+app.get('/api/game-clips/:squadId', authenticateToken, async (req, res) => {
     try {
         const squadId = req.params.squadId;
         const clips: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT gc.*, u.username FROM game_clips gc JOIN users u ON gc.user_id = u.id WHERE gc.squad_id = ? ORDER BY gc.created_at DESC",
+                'SELECT gc.*, u.username FROM game_clips gc JOIN users u ON gc.user_id = u.id WHERE gc.squad_id = ? ORDER BY gc.created_at DESC',
                 [squadId],
                 (err, rows) => {
                     if (err) reject(err);
@@ -1526,9 +1567,11 @@ app.get("/api/game-clips/:squadId", authenticateToken, async (req, res) => {
             );
         });
 
+        console.log(`[${new Date().toISOString()}] Fetched ${clips.length} clips for squad ${squadId}`);
         res.json(clips);
     } catch (err) {
-        res.status(500).json({ message: "Internal server error" });
+        console.error(`[${new Date().toISOString()}] Fetch clips error:`, err);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
