@@ -122,6 +122,33 @@ export const emitNotification = (userId: number, notification: any) => {
     io.to(userId.toString()).emit("notification", notification);
 };
 
+const processVideo = (inputPath: string, outputPath: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        // Get video duration
+        ffmpeg.ffprobe(inputPath, (err, metadata) => {
+            if (err) {
+                return reject(new Error('Error reading video metadata: ' + err.message));
+            }
+
+            const duration = metadata.format.duration;
+            if (!duration || duration > 90) {
+                return reject(new Error('Video duration exceeds 90 seconds'));
+            }
+
+            // Compress video
+            ffmpeg(inputPath)
+                .output(outputPath)
+                .videoCodec('libx264')
+                .audioCodec('aac')
+                .size('1280x720') // Resize to 720p
+                .videoBitrate('1500k') // Lower bitrate for compression
+                .audioBitrate('128k')
+                .on('end', () => resolve(outputPath))
+                .on('error', (err) => reject(new Error('Error compressing video: ' + err.message)))
+                .run();
+        });
+    });
+};
 
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
