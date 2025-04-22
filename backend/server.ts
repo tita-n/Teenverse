@@ -75,6 +75,12 @@ const routeDependencies: RouteDependencies = {
     SECRET_KEY
 };
 
+// Helper to emit notifications
+export const emitNotification = (userId: number, notification: any) => {
+    io.to(userId.toString()).emit("notification", notification);
+};
+
+
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
