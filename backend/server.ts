@@ -11,7 +11,8 @@ import { Server } from 'socket.io';
 import { User, ShopItem, RouteDependencies } from './types'; // Import interfaces
 import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
-import dmRoutes from "./routes/dms"; // Add this
+import dmRoutes from "./routes/dms"; // chats
+import settingsRouter from "./routes/settings"; // for settings 
 
 dotenv.config();
 
