@@ -110,20 +110,6 @@ const routeDependencies: RouteDependencies = {
     db,
     SECRET_KEY
 };
-
-const processVideo = (inputPath: string, outputPath: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        // Get video duration
-        ffmpeg.ffprobe(inputPath, (err, metadata) => {
-            if (err) {
-                return reject(new Error('Error reading video metadata: ' + err.message));
-            }
-
-            const duration = metadata.format.duration;
-            if (!duration || duration > 90) {
-                return reject(new Error('Video duration exceeds 90 seconds'));
-            }
-
  
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
