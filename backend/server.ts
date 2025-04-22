@@ -1794,16 +1794,16 @@ app.get('/api/hype-battles', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (req, res) => {
+app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (req: Request, res: Response) => {
     try {
         const { email, category, content, opponentUsername, teamId, opponentTeamId, isLive } = req.body;
         const file = req.file;
 
-        if (req.user.email !== email) {
+        if ((req as AuthenticatedRequest).user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
-        const user = await new Promise<any>((resolve, reject) => {
+        const user: any = await new Promise<any>((resolve, reject) => {
             db.get('SELECT id, username FROM users WHERE email = ?', [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
@@ -1811,24 +1811,24 @@ app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (r
         });
 
         if (!user) {
-            if (file) fs.unlinkSync(file.path); // Clean up uploaded file
+            if (file) fs.unlinkSync(file.path);
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const validCategories = ['Rap Battle', 'Dance-off', 'Meme Creation', 'Artistic Speed Drawing', 'Beat-making Face-off'];
-        if (!validCategories.includes(category)) {
+        if (!category || !['dance', 'rap', 'comedy', 'other'].includes(category)) {
             if (file) fs.unlinkSync(file.path);
-            return res.status(400).json({ message: 'Invalid battle category' });
+            return res.status(400).json({ message: 'Valid category is required (dance, rap, comedy, other)' });
         }
 
-        let opponentId = null;
+        let opponentId: number | null = null;
         if (opponentUsername) {
-            const opponent = await new Promise<any>((resolve, reject) => {
+            const opponent: any = await new Promise<any>((resolve, reject) => {
                 db.get('SELECT id FROM users WHERE username = ?', [opponentUsername], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
+
             if (!opponent) {
                 if (file) fs.unlinkSync(file.path);
                 return res.status(404).json({ message: 'Opponent not found' });
@@ -1836,50 +1836,81 @@ app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (r
             opponentId = opponent.id;
         }
 
-        if (teamId) {
-            const team = await new Promise<any>((resolve, reject) => {
+        if ((teamId && !opponentTeamId) || (!teamId && opponentTeamId)) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: 'Both teamId and opponentTeamId are required for team battles' });
+        }
+
+        if (teamId && opponentTeamId) {
+            const team: any = await new Promise<any>((resolve, reject) => {
                 db.get('SELECT id FROM teams WHERE id = ?', [teamId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
-            if (!team) {
-                if (file) fs.unlinkSync(file.path);
-                return res.status(404).json({ message: 'Team not found' });
-            }
-        }
-        if (opponentTeamId) {
-            const opponentTeam = await new Promise<any>((resolve, reject) => {
+
+            const opponentTeam: any = await new Promise<any>((resolve, reject) => {
                 db.get('SELECT id FROM teams WHERE id = ?', [opponentTeamId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
-            if (!opponentTeam) {
+
+            if (!team || !opponentTeam) {
                 if (file) fs.unlinkSync(file.path);
-                return res.status(404).json({ message: 'Opponent team not found' });
+                return res.status(404).json({ message: 'One or both teams not found' });
+            }
+
+            const isTeamMember: any = await new Promise<any>((resolve, reject) => {
+                db.get('SELECT team_id FROM team_members WHERE team_id = ? AND user_id = ?', [teamId, user.id], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (!isTeamMember) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(403).json({ message: 'You must be a member of the team to create a team battle' });
             }
         }
 
-        let mediaUrl = null;
+        let mediaUrl: string | null = null;
         if (file) {
-            const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
-            await processVideo(file.path, outputPath);
-
-            const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
-                resource_type: 'video',
-                folder: 'teenverse/hype-battles',
-                timeout: 60000,
+            // Validate video duration using ffprobe
+            const metadata = await new Promise((resolve, reject) => {
+                ffmpeg.ffprobe(file.path, (err, metadata) => {
+                    if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+                    resolve(metadata);
+                });
             });
 
-            fs.unlinkSync(file.path);
-            fs.unlinkSync(outputPath);
+            const duration = metadata.format.duration;
+            if (!duration || duration > 90) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
+            }
+
+            // Upload directly to Cloudinary with transformations
+            const cloudinaryResult = await cloudinary.uploader.upload(file.path, {
+                resource_type: 'video',
+                folder: 'teenverse/hype-battles',
+                timeout: 120000, // Increased timeout to 120 seconds
+                transformation: [
+                    { width: 1280, height: 720, crop: 'scale' },
+                    { quality: 'auto:low', fetch_format: 'auto' },
+                    { video_codec: 'h264', bit_rate: '1500k' },
+                    { audio_codec: 'aac', audio_bit_rate: '128k' }
+                ]
+            });
+
+            // Clean up the temporary file
+            if (file) fs.unlinkSync(file.path);
             mediaUrl = cloudinaryResult.secure_url;
         }
 
         const votingDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-        const battle = await new Promise<any>((resolve, reject) => {
+        const battle: any = await new Promise<any>((resolve, reject) => {
             db.run(
                 'INSERT INTO hype_battles (user_id, username, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [user.id, user.username, opponentId || null, teamId || null, opponentTeamId || null, category, content, mediaUrl, isLive ? 1 : 0, votingDeadline],
@@ -1895,25 +1926,22 @@ app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (r
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
-        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
-        }
-        console.error('Create hype battle error:', err);
+        console.error(`[${new Date().toISOString()}] Create hype battle error:`, err.stack || err);
         res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
-app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), async (req, res) => {
+// Hype Battle Response Endpoint
+app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), async (req: Request, res: Response) => {
     try {
         const { email, battleId, content } = req.body;
         const file = req.file;
 
-        if (req.user.email !== email) {
+        if ((req as AuthenticatedRequest).user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
-        const user = await new Promise<any>((resolve, reject) => {
+        const user: any = await new Promise<any>((resolve, reject) => {
             db.get('SELECT id FROM users WHERE email = ?', [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
@@ -1925,7 +1953,7 @@ app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), 
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const battle = await new Promise<any>((resolve, reject) => {
+        const battle: any = await new Promise<any>((resolve, reject) => {
             db.get('SELECT opponent_id, closed FROM hype_battles WHERE id = ?', [battleId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
@@ -1936,28 +1964,48 @@ app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), 
             if (file) fs.unlinkSync(file.path);
             return res.status(404).json({ message: 'Battle not found' });
         }
+
         if (battle.closed) {
             if (file) fs.unlinkSync(file.path);
             return res.status(400).json({ message: 'Battle is closed' });
         }
+
         if (battle.opponent_id !== user.id) {
             if (file) fs.unlinkSync(file.path);
             return res.status(403).json({ message: 'You are not the opponent for this battle' });
         }
 
-        let opponentMediaUrl = null;
+        let opponentMediaUrl: string | null = null;
         if (file) {
-            const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
-            await processVideo(file.path, outputPath);
-
-            const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
-                resource_type: 'video',
-                folder: 'teenverse/hype-battles',
-                timeout: 60000,
+            // Validate video duration using ffprobe
+            const metadata = await new Promise((resolve, reject) => {
+                ffmpeg.ffprobe(file.path, (err, metadata) => {
+                    if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+                    resolve(metadata);
+                });
             });
 
-            fs.unlinkSync(file.path);
-            fs.unlinkSync(outputPath);
+            const duration = metadata.format.duration;
+            if (!duration || duration > 90) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
+            }
+
+            // Upload directly to Cloudinary with transformations
+            const cloudinaryResult = await cloudinary.uploader.upload(file.path, {
+                resource_type: 'video',
+                folder: 'teenverse/hype-battles',
+                timeout: 120000, // Increased timeout to 120 seconds
+                transformation: [
+                    { width: 1280, height: 720, crop: 'scale' },
+                    { quality: 'auto:low', fetch_format: 'auto' },
+                    { video_codec: 'h264', bit_rate: '1500k' },
+                    { audio_codec: 'aac', audio_bit_rate: '128k' }
+                ]
+            });
+
+            // Clean up the temporary file
+            if (file) fs.unlinkSync(file.path);
             opponentMediaUrl = cloudinaryResult.secure_url;
         }
 
@@ -1977,11 +2025,7 @@ app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), 
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
-        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
-        if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
-        }
-        console.error('Respond to hype battle error:', err);
+        console.error(`[${new Date().toISOString()}] Respond to hype battle error:`, err.stack || err);
         res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
