@@ -57,7 +57,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    fileFilter: (req, file, cb) => {
+    fileFilter: (req: Request, file: Express.Multer.File, cb: (error: Error | null, acceptFile: boolean) => void) => {
         if (file.mimetype.startsWith('video/')) {
             cb(null, true);
         } else {
