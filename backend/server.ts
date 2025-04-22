@@ -13,7 +13,6 @@ import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import fs from 'fs';
 import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
