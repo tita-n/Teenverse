@@ -1770,22 +1770,22 @@ app.get("/api/teams", authenticateToken, async (req, res) => {
 });
 
 // Hype Battles Endpoints
-app.get("/api/hype-battles", authenticateToken, async (req, res) => {
+app.get('/api/hype-battles', authenticateToken, async (req, res) => {
     try {
         const { category, isLive } = req.query;
-        let query = "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0";
+        let query = 'SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0';
         const params = [];
 
         if (category) {
-            query += " AND h.category = ?";
+            query += ' AND h.category = ?';
             params.push(category);
         }
         if (isLive) {
-            query += " AND h.is_live = ?";
-            params.push(isLive === "true" ? 1 : 0);
+            query += ' AND h.is_live = ?';
+            params.push(isLive === 'true' ? 1 : 0);
         }
 
-        query += " ORDER BY h.created_at DESC";
+        query += ' ORDER BY h.created_at DESC';
 
         const battles = await new Promise<any[]>((resolve, reject) => {
             db.all(query, params, (err, rows) => {
@@ -1798,65 +1798,98 @@ app.get("/api/hype-battles", authenticateToken, async (req, res) => {
         res.json(battles);
     } catch (err) {
         console.error(`[${new Date().toISOString()}] Get hype battles error:`, err);
-        res.status(500).json({ message: "Internal server error" });
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-app.post("/api/hype-battle", authenticateToken, async (req, res) => {
+app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (req, res) => {
     try {
-        const { email, category, content, mediaUrl, opponentId, teamId, opponentTeamId, isLive } = req.body;
+        const { email, category, content, opponentUsername, teamId, opponentTeamId, isLive } = req.body;
+        const file = req.file;
+
         if (req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
+            return res.status(403).json({ message: 'Unauthorized' });
         }
 
         const user = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
+            db.get('SELECT id, username FROM users WHERE email = ?', [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!user) return res.status(404).json({ message: "User not found" });
-
-        const validCategories = ["Rap Battle", "Dance-off", "Meme Creation", "Artistic Speed Drawing", "Beat-making Face-off"];
-        if (!validCategories.includes(category)) {
-            return res.status(400).json({ message: "Invalid battle category" });
+        if (!user) {
+            if (file) fs.unlinkSync(file.path); // Clean up uploaded file
+            return res.status(404).json({ message: 'User not found' });
         }
 
-        if (opponentId) {
+        const validCategories = ['Rap Battle', 'Dance-off', 'Meme Creation', 'Artistic Speed Drawing', 'Beat-making Face-off'];
+        if (!validCategories.includes(category)) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: 'Invalid battle category' });
+        }
+
+        let opponentId = null;
+        if (opponentUsername) {
             const opponent = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT id FROM users WHERE id = ?", [opponentId], (err, row) => {
+                db.get('SELECT id FROM users WHERE username = ?', [opponentUsername], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
-            if (!opponent) return res.status(404).json({ message: "Opponent not found" });
+            if (!opponent) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(404).json({ message: 'Opponent not found' });
+            }
+            opponentId = opponent.id;
         }
 
         if (teamId) {
             const team = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT id FROM teams WHERE id = ?", [teamId], (err, row) => {
+                db.get('SELECT id FROM teams WHERE id = ?', [teamId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
-            if (!team) return res.status(404).json({ message: "Team not found" });
+            if (!team) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(404).json({ message: 'Team not found' });
+            }
         }
         if (opponentTeamId) {
             const opponentTeam = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT id FROM teams WHERE id = ?", [opponentTeamId], (err, row) => {
+                db.get('SELECT id FROM teams WHERE id = ?', [opponentTeamId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
-            if (!opponentTeam) return res.status(404).json({ message: "Opponent team not found" });
+            if (!opponentTeam) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(404).json({ message: 'Opponent team not found' });
+            }
+        }
+
+        let mediaUrl = null;
+        if (file) {
+            const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
+            await processVideo(file.path, outputPath);
+
+            const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
+                resource_type: 'video',
+                folder: 'teenverse/hype-battles',
+                timeout: 60000,
+            });
+
+            fs.unlinkSync(file.path);
+            fs.unlinkSync(outputPath);
+            mediaUrl = cloudinaryResult.secure_url;
         }
 
         const votingDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
         const battle = await new Promise<any>((resolve, reject) => {
             db.run(
-                "INSERT INTO hype_battles (user_id, username, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                'INSERT INTO hype_battles (user_id, username, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [user.id, user.username, opponentId || null, teamId || null, opponentTeamId || null, category, content, mediaUrl, isLive ? 1 : 0, votingDeadline],
                 function (err) {
                     if (err) reject(err);
@@ -1865,44 +1898,81 @@ app.post("/api/hype-battle", authenticateToken, async (req, res) => {
             );
         });
 
-        res.json({ message: "Battle created!", battleId: battle.id });
+        res.json({ message: 'Battle created!', battleId: battle.id });
     } catch (err) {
-        console.error("Create hype battle error:", err);
-        res.status(500).json({ message: "Internal server error" });
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+        }
+        console.error('Create hype battle error:', err);
+        res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
-app.post("/api/hype-battle/respond", authenticateToken, async (req, res) => {
+app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), async (req, res) => {
     try {
-        const { email, battleId, content, mediaUrl } = req.body;
+        const { email, battleId, content } = req.body;
+        const file = req.file;
+
         if (req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
+            return res.status(403).json({ message: 'Unauthorized' });
         }
 
         const user = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+            db.get('SELECT id FROM users WHERE email = ?', [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!user) return res.status(404).json({ message: "User not found" });
+        if (!user) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(404).json({ message: 'User not found' });
+        }
 
         const battle = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT opponent_id, closed FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+            db.get('SELECT opponent_id, closed FROM hype_battles WHERE id = ?', [battleId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!battle) return res.status(404).json({ message: "Battle not found" });
-        if (battle.closed) return res.status(400).json({ message: "Battle is closed" });
-        if (battle.opponent_id !== user.id) return res.status(403).json({ message: "You are not the opponent for this battle" });
+        if (!battle) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(404).json({ message: 'Battle not found' });
+        }
+        if (battle.closed) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: 'Battle is closed' });
+        }
+        if (battle.opponent_id !== user.id) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(403).json({ message: 'You are not the opponent for this battle' });
+        }
+
+        let opponentMediaUrl = null;
+        if (file) {
+            const outputPath = path.join(__dirname, 'uploads', `processed-${file.filename}`);
+            await processVideo(file.path, outputPath);
+
+            const cloudinaryResult = await cloudinary.uploader.upload(outputPath, {
+                resource_type: 'video',
+                folder: 'teenverse/hype-battles',
+                timeout: 60000,
+            });
+
+            fs.unlinkSync(file.path);
+            fs.unlinkSync(outputPath);
+            opponentMediaUrl = cloudinaryResult.secure_url;
+        }
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "UPDATE hype_battles SET content = ?, media_url = ? WHERE id = ?",
-                [content, mediaUrl, battleId],
+                'UPDATE hype_battles SET content = ?, opponent_media_url = ? WHERE id = ?',
+                [content, opponentMediaUrl, battleId],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -1910,10 +1980,17 @@ app.post("/api/hype-battle/respond", authenticateToken, async (req, res) => {
             );
         });
 
-        res.json({ message: "Response submitted!" });
+        res.json({ message: 'Response submitted!' });
     } catch (err) {
-        console.error("Respond to hype battle error:", err);
-        res.status(500).json({ message: "Internal server error" });
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        const outputPath = req.file ? path.join(__dirname, 'uploads', `processed-${req.file.filename}`) : '';
+        if (fs.existsSync(outputPath)) {
+            fs.unlinkSync(outputPath);
+        }
+        console.error('Respond to hype battle error:', err);
+        res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
