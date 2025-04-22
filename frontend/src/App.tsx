@@ -16,8 +16,9 @@ import Shop from './pages/Shop';
 import CreatePost from "./pages/CreatePost";
 import Analytics from "./pages/Analytics";
 import UltimateShowdown from "./pages/UltimateShowdown";
-import ChatList from "./pages/ChatList"; // Add this
-import ChatDetail from "./pages/ChatDetail"; // Add this
+import ChatList from "./pages/ChatList";
+import ChatDetail from "./pages/ChatDetail";
+import Settings from "./pages/Settings"; // Add this
 import { AuthProvider } from "./hooks/useAuth";
 
 export default function App() {
@@ -42,8 +43,9 @@ export default function App() {
                     <Route path="/create-post" element={<CreatePost />} />
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
-                    <Route path="/chats" element={<ChatList />} /> {/* Add this */}
-                    <Route path="/chat/:conversationId" element={<ChatDetail />} /> {/* Add this */}
+                    <Route path="/chats" element={<ChatList />} />
+                    <Route path="/chat/:conversationId" element={<ChatDetail />} />
+                    <Route path="/settings" element={<Settings />} /> {/* Add this */}
                     <Route path="*" element={<div>404 - Page Not Found</div>} />
                 </Routes>
             </Router>
