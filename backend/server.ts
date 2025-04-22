@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import { User, ShopItem, RouteDependencies } from './types'; // Import interfaces
 import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
+import { v2 as cloudinary } from 'cloudinary';
 import dmRoutes from "./routes/dms"; // chats
 import settingsRouter from "./routes/settings"; // for settings 
 import notificationsRouter from "./routes/notifications"; // Add this
@@ -24,6 +25,13 @@ app.use(cors());
 
 const PORT = process.env.PORT || 5000;
 const SECRET_KEY = process.env.SECRET_KEY || "teenverse_secret";
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // Create HTTP server and integrate Socket.IO
 const server = http.createServer(app);
