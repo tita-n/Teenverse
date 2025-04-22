@@ -714,6 +714,23 @@ db.serialize(() => {
     );
 });
 
+// Notifications table
+db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL, -- e.g., "post_comment", "rant_reaction", "squad_message", etc.
+        message TEXT NOT NULL,
+        related_id INTEGER, -- ID of the related entity (e.g., post_id, rant_id, squad_id)
+        is_read INTEGER DEFAULT 0, -- 0 for unread, 1 for read
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+`);
+
+// Add index for notifications
+db.run("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)");
+
 // Close database on process exit
 process.on("SIGINT", () => {
     db.close((err) => {
