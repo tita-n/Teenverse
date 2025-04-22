@@ -3381,4 +3381,5 @@ declare global {
             user?: { email: string; verified: number; id?: number };
         }
     }
-}
+}  
+        }
