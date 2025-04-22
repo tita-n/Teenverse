@@ -26,14 +26,22 @@ db.serialize(() => {
             verified INTEGER DEFAULT 0,
             xp INTEGER DEFAULT 0,
             coins INTEGER DEFAULT 0,
-            last_login TEXT,
             snitch_status TEXT,
             creator_badge INTEGER DEFAULT 0,
             tier INTEGER DEFAULT 1,
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0,
             title TEXT,
-            legend_status TEXT DEFAULT ''
+            legend_status TEXT DEFAULT '',
+            bio TEXT, -- Added for profile settings
+            background_theme TEXT DEFAULT 'default', -- Added for profile settings
+            spending_restrictions BOOLEAN DEFAULT 0, -- Added for economy settings
+            auto_earn_uploads BOOLEAN DEFAULT 1, -- Added for economy settings
+            theme TEXT DEFAULT 'Neon Glow', -- Added for customization settings
+            animations_enabled BOOLEAN DEFAULT 1, -- Added for customization settings
+            font_size TEXT DEFAULT 'medium', -- Added for customization settings
+            language TEXT DEFAULT 'en', -- Added for customization settings
+            snitch_risk INTEGER DEFAULT 0 -- Added for privacy settings
         )
     `);
 
@@ -459,6 +467,18 @@ db.serialize(() => {
         )
     `);
 
+    // Blocked Users table (for Privacy & Safety)
+    db.run(`
+        CREATE TABLE IF NOT EXISTS blocked_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            blocked_user_id INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(blocked_user_id) REFERENCES users(id)
+        )
+    `);
+
     // Add columns to users for special privileges
     db.run(`
         ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
@@ -644,6 +664,9 @@ db.serialize(() => {
     db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)");
     db.run("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)");
+
+    // Add index for blocked_users
+    db.run("CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)");
 
     // Set creator_badge and add to developer_picks for restorationmichael3@gmail.com
     db.get(
