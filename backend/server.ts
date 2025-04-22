@@ -13,6 +13,8 @@ import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
 import dmRoutes from "./routes/dms"; // chats
 import settingsRouter from "./routes/settings"; // for settings 
+import notificationsRouter from "./routes/notifications"; // Add this
+
 
 dotenv.config();
 
