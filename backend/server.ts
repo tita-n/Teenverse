@@ -18,7 +18,6 @@ import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
 import settingsRouter from "./routes/settings"; // for settings 
 
-
 dotenv.config();
 
 const app = express();
@@ -3382,4 +3381,3 @@ declare global {
         }
     }
 }  
-        }
