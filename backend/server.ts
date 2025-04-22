@@ -15,6 +15,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import fs from 'fs';
+import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
 import settingsRouter from "./routes/settings"; // for settings 
 import notificationsRouter from "./routes/notifications"; // Add this
