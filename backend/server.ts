@@ -117,11 +117,6 @@ const routeDependencies: RouteDependencies = {
     SECRET_KEY
 };
 
-// Helper to emit notifications
-export const emitNotification = (userId: number, notification: any) => {
-    io.to(userId.toString()).emit("notification", notification);
-};
-
 const processVideo = (inputPath: string, outputPath: string): Promise<string> => {
     return new Promise((resolve, reject) => {
         // Get video duration
