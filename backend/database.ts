@@ -234,7 +234,10 @@ db.serialize(() => {
             UNIQUE(user_id, battle_id)
         )
     `);
-
+db.run(`
+    ALTER TABLE hype_battles ADD COLUMN opponent_media_url TEXT
+`);
+    
     // Showdown Votes table
     db.run(`
         CREATE TABLE IF NOT EXISTS showdown_votes (
