@@ -28,7 +28,7 @@
     "sqlite3": "^5.1.6",
     "socket.io": "^4.7.0",
     "socket.io-client": "^4.7.5",
-    "multer": "^1.4.5-lts.1", // Added for file uploads
+    "multer": "^1.4.5-lts.1", 
     "@ffmpeg-installer/ffmpeg": "^1.1.0", 
     "ffmpeg-static": "^5.2.0", 
     "fluent-ffmpeg": "^2.1.3", 
