@@ -47,6 +47,16 @@ export default function HypeBattles() {
     const { user, token } = useAuth();
     const { socket } = useSocket();
 
+    const getCategoryDisplayName = (category: string): string => {
+        const categoryDisplayMap: { [key: string]: string } = {
+            rap: 'Rap Battle',
+            dance: 'Dance-off',
+            comedy: 'Meme Creation',
+            other: 'Other (Artistic Speed Drawing or Beat-making Face-off)',
+        };
+        return categoryDisplayMap[category] || category;
+    };
+
     useEffect(() => {
         const fetchBattles = async () => {
             if (!user || !token) return;
@@ -370,11 +380,11 @@ export default function HypeBattles() {
                             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"
                         >
                             <option value="">Select Category</option>
-                            <option value="Rap Battle">Rap Battle</option>
-                            <option value="Dance-off">Dance-off</option>
-                            <option value="Meme Creation">Meme Creation</option>
-                            <option value="Artistic Speed Drawing">Artistic Speed Drawing</option>
-                            <option value="Beat-making Face-off">Beat-making Face-off</option>
+                            <option value="rap">Rap Battle</option>
+                            <option value="dance">Dance-off</option>
+                            <option value="comedy">Meme Creation</option>
+                            <option value="other">Artistic Speed Drawing</option>
+                            <option value="other">Beat-making Face-off</option>
                         </select>
                         <textarea
                             value={content}
@@ -455,7 +465,7 @@ export default function HypeBattles() {
                                                 {battle.username} (Tier: {battle.tier})
                                             </p>
                                             {battle.team_id && <p className="text-gray-800">Team ID: {battle.team_id}</p>}
-                                            <p className="text-gray-600">Category: {battle.category}</p>
+                                            <p className="text-gray-600">Category: {getCategoryDisplayName(battle.category)}</p>
                                             <p className="text-gray-600">{battle.content}</p>
                                             {battle.media_url && (
                                                 <video
@@ -555,4 +565,4 @@ export default function HypeBattles() {
             </div>
         </div>
     );
-        }
+                        }
