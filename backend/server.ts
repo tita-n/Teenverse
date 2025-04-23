@@ -13,6 +13,7 @@ import { InventoryItem } from './types'; // Import interface
 import express, { Request, Response } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
 import ffmpeg from 'fluent-ffmpeg';
+import { FfprobeData } from 'fluent-ffmpeg';
 import fs from 'fs';
 import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
@@ -1429,7 +1430,7 @@ app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req
         const { email, squadId, description } = req.body;
         const file = req.file;
 
-        if ((req as AuthenticatedRequest).user.email !== email) {
+        if (req.user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
@@ -1473,14 +1474,14 @@ app.post('/api/game-clips', authenticateToken, upload.single('clip'), async (req
         }
 
         // Validate video duration using ffprobe
-        const metadata = await new Promise((resolve, reject) => {
-            ffmpeg.ffprobe(file.path, (err, metadata) => {
-                if (err) return reject(new Error('Error reading video metadata: ' + err.message));
-                resolve(metadata);
-            });
-        });
+        const metadata = await new Promise<FfprobeData>((resolve, reject) => {
+    ffmpeg.ffprobe(file.path, (err, metadata) => {
+        if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+        resolve(metadata);
+    });
+});
 
-        const duration = metadata.format.duration;
+const duration = metadata.format.duration;
         if (!duration || duration > 90) {
             if (file) fs.unlinkSync(file.path);
             return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
@@ -1784,7 +1785,7 @@ app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (r
         const { email, category, content, opponentUsername, teamId, opponentTeamId, isLive } = req.body;
         const file = req.file;
 
-        if ((req as AuthenticatedRequest).user.email !== email) {
+       if (req.user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
@@ -1862,14 +1863,14 @@ app.post('/api/hype-battle', authenticateToken, upload.single('media'), async (r
         let mediaUrl: string | null = null;
         if (file) {
             // Validate video duration using ffprobe
-            const metadata = await new Promise((resolve, reject) => {
-                ffmpeg.ffprobe(file.path, (err, metadata) => {
-                    if (err) return reject(new Error('Error reading video metadata: ' + err.message));
-                    resolve(metadata);
-                });
-            });
+            const metadata = await new Promise<FfprobeData>((resolve, reject) => {
+    ffmpeg.ffprobe(file.path, (err, metadata) => {
+        if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+        resolve(metadata);
+    });
+});
 
-            const duration = metadata.format.duration;
+const duration = metadata.format.duration;
             if (!duration || duration > 90) {
                 if (file) fs.unlinkSync(file.path);
                 return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
@@ -1922,7 +1923,7 @@ app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), 
         const { email, battleId, content } = req.body;
         const file = req.file;
 
-        if ((req as AuthenticatedRequest).user.email !== email) {
+        if (req.user.email !== email) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
 
@@ -1963,14 +1964,14 @@ app.post('/api/hype-battle/respond', authenticateToken, upload.single('media'), 
         let opponentMediaUrl: string | null = null;
         if (file) {
             // Validate video duration using ffprobe
-            const metadata = await new Promise((resolve, reject) => {
-                ffmpeg.ffprobe(file.path, (err, metadata) => {
-                    if (err) return reject(new Error('Error reading video metadata: ' + err.message));
-                    resolve(metadata);
-                });
-            });
+const metadata = await new Promise<FfprobeData>((resolve, reject) => {
+    ffmpeg.ffprobe(file.path, (err, metadata) => {
+        if (err) return reject(new Error('Error reading video metadata: ' + err.message));
+        resolve(metadata);
+    });
+});
 
-            const duration = metadata.format.duration;
+const duration = metadata.format.duration;
             if (!duration || duration > 90) {
                 if (file) fs.unlinkSync(file.path);
                 return res.status(400).json({ message: 'Video duration exceeds 90 seconds' });
