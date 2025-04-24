@@ -2,14 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { useSocket } from "../context/SocketContext";
 
 interface Message {
     id: number;
     sender_username: string;
-    content?: string;
-    media_url?: string;
-    media_type?: "voice" | "photo" | "video";
+    content: string;
     created_at: string;
     is_ghost_bomb: number;
 }
@@ -19,14 +16,10 @@ export default function ChatDetail() {
     const { state } = useLocation();
     const { otherUsername } = state || {};
     const { user, token } = useAuth();
-    const { socket } = useSocket();
     const navigate = useNavigate();
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
     const [isGhostBomb, setIsGhostBomb] = useState(false);
-    const [mediaFile, setMediaFile] = useState<File | null>(null);
-    const [mediaType, setMediaType] = useState<"voice" | "photo" | "video" | null>(null);
-    const [mediaPreview, setMediaPreview] = useState<string | null>(null);
     const [error, setError] = useState<string>("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -51,92 +44,38 @@ export default function ChatDetail() {
 
         fetchMessages();
 
-        // Join the conversation room via WebSocket
-        if (socket && conversationId) {
-            socket.emit("join_conversation", conversationId);
-
-            socket.on("new_message", (message: Message) => {
-                const currentTime = new Date();
-                if (message.is_ghost_bomb) {
-                    const sentTime = new Date(message.created_at);
-                    const timeDiff = (currentTime.getTime() - sentTime.getTime()) / 1000;
-                    if (timeDiff > 10) return; // Skip if ghost bomb has expired
-                }
-                setMessages((prev) => {
-                    // Avoid duplicates by checking message ID
-                    if (prev.some((msg) => msg.id === message.id)) {
-                        return prev;
-                    }
-                    return [...prev, message];
-                });
-            });
-
-            return () => {
-                socket.off("new_message");
-                socket.emit("leave_conversation", conversationId);
-            };
-        }
-    }, [conversationId, user, token, navigate, socket]);
+        const interval = setInterval(fetchMessages, 5000);
+        return () => clearInterval(interval);
+    }, [conversationId, user, token, navigate]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    useEffect(() => {
-        return () => {
-            if (mediaPreview) {
-                URL.revokeObjectURL(mediaPreview);
-            }
-        };
-    }, [mediaPreview]);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: "voice" | "photo" | "video") => {
-        const file = e.target.files ? e.target.files[0] : null;
-        if (file && file.size > 20 * 1024 * 1024) {
-            setError("File size exceeds 20MB limit.");
-            return;
-        }
-        setMediaFile(file);
-        setMediaType(type);
-        if (mediaPreview) {
-            URL.revokeObjectURL(mediaPreview);
-        }
-        if (file) {
-            const previewUrl = URL.createObjectURL(file);
-            setMediaPreview(previewUrl);
-        } else {
-            setMediaPreview(null);
-        }
-    };
-
     const handleSendMessage = async () => {
-        if (!newMessage.trim() && !mediaFile) return;
-
-        const formData = new FormData();
-        formData.append("email", user.email);
-        formData.append("recipientUsername", otherUsername);
-        if (newMessage.trim()) {
-            formData.append("content", newMessage);
-        }
-        formData.append("isGhostBomb", isGhostBomb.toString());
-        if (mediaFile) {
-            formData.append("media", mediaFile);
-            formData.append("mediaType", mediaType!);
-        }
+        if (!newMessage.trim()) return;
 
         try {
-            await axios.post("/api/dms/send", formData, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "multipart/form-data",
+            await axios.post(
+                "/api/dms/send",
+                {
+                    email: user.email,
+                    recipientUsername: otherUsername,
+                    content: newMessage,
+                    isGhostBomb,
                 },
-            });
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
 
             setNewMessage("");
             setIsGhostBomb(false);
-            setMediaFile(null);
-            setMediaType(null);
-            setMediaPreview(null);
+
+            const messagesResponse = await axios.get(`/api/dms/messages/${conversationId}?email=${user.email}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setMessages(messagesResponse.data);
         } catch (err) {
             console.error("Error sending message:", err);
             setError("Failed to send message: " + (err.response?.data?.message || err.message));
@@ -269,20 +208,7 @@ export default function ChatDetail() {
                                 position: "relative",
                             }}
                         >
-                            {msg.content && (
-                                <p style={{ fontSize: "14px", margin: 0, marginBottom: msg.media_url ? "10px" : "0" }}>
-                                    {msg.content}
-                                </p>
-                            )}
-                            {msg.media_url && msg.media_type === "voice" && (
-                                <audio controls src={msg.media_url} style={{ maxWidth: "100%", marginTop: "5px" }} />
-                            )}
-                            {msg.media_url && msg.media_type === "photo" && (
-                                <img src={msg.media_url} alt="Photo" style={{ maxWidth: "100%", borderRadius: "10px", marginTop: "5px" }} />
-                            )}
-                            {msg.media_url && msg.media_type === "video" && (
-                                <video controls src={msg.media_url} style={{ maxWidth: "100%", borderRadius: "10px", marginTop: "5px" }} />
-                            )}
+                            <p style={{ fontSize: "14px", margin: 0 }}>{msg.content}</p>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "5px" }}>
                                 {msg.is_ghost_bomb && (
                                     <small style={{ fontSize: "10px", opacity: 0.7 }}>
@@ -303,7 +229,6 @@ export default function ChatDetail() {
                     backgroundColor: "white",
                     padding: "15px 20px",
                     display: "flex",
-                    flexWrap: "wrap",
                     alignItems: "center",
                     gap: "10px",
                     boxShadow: "0 -1px 3px rgba(0,0,0,0.1)",
@@ -323,66 +248,9 @@ export default function ChatDetail() {
                         border: "1px solid #e0e0e0",
                         outline: "none",
                         fontSize: "14px",
-                        marginRight: "10px",
                     }}
                 />
-                <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                    <label style={{ fontSize: "14px", color: "#667781" }}>
-                        Voice:
-                        <input
-                            type="file"
-                            accept="audio/*"
-                            onChange={(e) => handleFileChange(e, "voice")}
-                            style={{ marginLeft: "5px" }}
-                        />
-                    </label>
-                    <label style={{ fontSize: "14px", color: "#667781" }}>
-                        Photo:
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleFileChange(e, "photo")}
-                            style={{ marginLeft: "5px" }}
-                        />
-                    </label>
-                    <label style={{ fontSize: "14px", color: "#667781" }}>
-                        Video:
-                        <input
-                            type="file"
-                            accept="video/*"
-                            onChange={(e) => handleFileChange(e, "video")}
-                            style={{ marginLeft: "5px" }}
-                        />
-                    </label>
-                </div>
-                {mediaPreview && (
-                    <div style={{ width: "100%", marginTop: "10px" }}>
-                        <h4 style={{ fontSize: "14px", color: "#667781" }}>Preview:</h4>
-                        {mediaType === "voice" && <audio controls src={mediaPreview} style={{ maxWidth: "100%" }} />}
-                        {mediaType === "photo" && <img src={mediaPreview} alt="Preview" style={{ maxWidth: "200px", borderRadius: "10px" }} />}
-                        {mediaType === "video" && <video controls src={mediaPreview} style={{ maxWidth: "200px", borderRadius: "10px" }} />}
-                        <button
-                            onClick={() => {
-                                setMediaFile(null);
-                                setMediaType(null);
-                                setMediaPreview(null);
-                            }}
-                            style={{
-                                backgroundColor: "#ff4444",
-                                color: "white",
-                                padding: "5px 10px",
-                                borderRadius: "10px",
-                                border: "none",
-                                cursor: "pointer",
-                                marginLeft: "10px",
-                                fontSize: "12px",
-                            }}
-                        >
-                            Remove
-                        </button>
-                    </div>
-                )}
-                <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px", color: "#667781", marginLeft: "10px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px", color: "#667781" }}>
                     <input
                         type="checkbox"
                         checked={isGhostBomb}
@@ -400,7 +268,6 @@ export default function ChatDetail() {
                         border: "none",
                         cursor: "pointer",
                         fontSize: "14px",
-                        marginLeft: "10px",
                     }}
                 >
                     Send
@@ -408,4 +275,4 @@ export default function ChatDetail() {
             </div>
         </div>
     );
-        }
+                                                                                              }
