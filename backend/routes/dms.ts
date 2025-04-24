@@ -1,8 +1,68 @@
 import express from "express";
 import { RouteDependencies, Conversation, Message, User } from "../types";
+import multer from "multer";
+import fs from "fs";
+import { v2 as cloudinary } from "cloudinary";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import { Server as SocketIOServer } from "socket.io";
 
-export default function dmRoutes({ db }: RouteDependencies) {
+// Set FFmpeg path
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
+// Configure Cloudinary (ensure your environment variables are set)
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Configure Multer for file uploads with a 20MB limit
+const upload = multer({
+    dest: "uploads/",
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+});
+
+export default function dmRoutes({ db, io }: RouteDependencies) {
     const router = express.Router();
+
+    // Join a conversation room (WebSocket)
+    router.post("/join-conversation", async (req: express.Request, res: express.Response) => {
+        const { email, conversationId } = req.body;
+        if (!email || !conversationId) {
+            return res.status(400).json({ message: "Email and conversationId are required" });
+        }
+        if (!req.user || req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        try {
+            const user: User = await new Promise<User>((resolve, reject) => {
+                db.get("SELECT id FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+            if (!user) return res.status(404).json({ message: "User not found" });
+
+            const conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
+                db.get(
+                    "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+                    [conversationId, user.id, user.id],
+                    (err: Error | null, row: Conversation) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+            if (!conversation) return res.status(404).json({ message: "Conversation not found or you are not a participant" });
+
+            // Emit a success response (client will handle Socket.IO connection separately)
+            res.json({ message: "Joined conversation successfully" });
+        } catch (err) {
+            console.error(`[${new Date().toISOString()}] Join conversation error:`, err);
+            res.status(500).json({ message: "Internal server error" });
+        }
+    });
 
     // Get list of conversations (chat list page)
     router.get("/conversations", async (req: express.Request, res: express.Response) => {
@@ -56,8 +116,12 @@ export default function dmRoutes({ db }: RouteDependencies) {
                     });
                     return {
                         ...conv,
-                        latest_message: latestMessage ? latestMessage.content : "No messages yet",
-                        latest_message_time: latestMessage ? latestMessage.created_at : conv.created_at
+                        latest_message: latestMessage
+                            ? latestMessage.media_url
+                                ? `[${latestMessage.media_type}]`
+                                : latestMessage.content
+                            : "No messages yet",
+                        latest_message_time: latestMessage ? latestMessage.created_at : conv.created_at,
                     };
                 })
             );
@@ -128,15 +192,33 @@ export default function dmRoutes({ db }: RouteDependencies) {
         }
     });
 
-    // Start a new conversation or send a message
-    router.post("/send", async (req: express.Request, res: express.Response) => {
-        const { email, recipientUsername, content, isGhostBomb = false } = req.body;
-        if (!email || !recipientUsername || !content) {
-            return res.status(400).json({ message: "Email, recipientUsername, and content are required" });
+    // Start a new conversation or send a message (with media support)
+    router.post("/send", upload.single("media"), async (req: express.Request, res: express.Response) => {
+        const { email, recipientUsername, content, isGhostBomb = false, mediaType } = req.body;
+        const file = req.file;
+
+        // Validate required fields
+        if (!email || !recipientUsername) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: "Email and recipientUsername are required" });
         }
         if (!req.user || req.user.email !== email) {
+            if (file) fs.unlinkSync(file.path);
             return res.status(403).json({ message: "Unauthorized" });
         }
+        if (!content && !file) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: "Either content or media file is required" });
+        }
+        if (file && !mediaType) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: "mediaType is required when sending a media file" });
+        }
+        if (mediaType && !["voice", "photo", "video"].includes(mediaType)) {
+            if (file) fs.unlinkSync(file.path);
+            return res.status(400).json({ message: "mediaType must be one of: voice, photo, video" });
+        }
+
         try {
             const sender: User = await new Promise<User>((resolve, reject) => {
                 db.get("SELECT id FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
@@ -144,7 +226,10 @@ export default function dmRoutes({ db }: RouteDependencies) {
                     resolve(row);
                 });
             });
-            if (!sender) return res.status(404).json({ message: "Sender not found" });
+            if (!sender) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(404).json({ message: "Sender not found" });
+            }
 
             const recipient: User = await new Promise<User>((resolve, reject) => {
                 db.get("SELECT id FROM users WHERE username = ?", [recipientUsername], (err: Error | null, row: User) => {
@@ -152,7 +237,10 @@ export default function dmRoutes({ db }: RouteDependencies) {
                     resolve(row);
                 });
             });
-            if (!recipient) return res.status(404).json({ message: "Recipient not found" });
+            if (!recipient) {
+                if (file) fs.unlinkSync(file.path);
+                return res.status(404).json({ message: "Recipient not found" });
+            }
 
             let conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
                 db.get(
@@ -189,20 +277,108 @@ export default function dmRoutes({ db }: RouteDependencies) {
                 });
             }
 
-            await new Promise<void>((resolve, reject) => {
+            let mediaUrl: string | undefined = undefined;
+            let finalMediaType: "voice" | "photo" | "video" | undefined = undefined;
+
+            if (file) {
+                // Validate file type based on mediaType
+                const allowedTypes = {
+                    voice: ["audio/mpeg", "audio/wav", "audio/mp3"],
+                    photo: ["image/jpeg", "image/png", "image/gif"],
+                    video: ["video/mp4", "video/mpeg", "video/webm"],
+                };
+
+                if (!allowedTypes[mediaType].includes(file.mimetype)) {
+                    fs.unlinkSync(file.path);
+                    return res.status(400).json({ message: `Invalid file type for ${mediaType}. Allowed types: ${allowedTypes[mediaType].join(", ")}` });
+                }
+
+                // For voice messages and videos, check duration
+                if (mediaType === "voice" || mediaType === "video") {
+                    const metadata = await new Promise<any>((resolve, reject) => {
+                        ffmpeg.ffprobe(file.path, (err, metadata) => {
+                            if (err) return reject(new Error("Error reading media metadata: " + err.message));
+                            resolve(metadata);
+                        });
+                    });
+
+                    const duration = metadata.format.duration;
+                    const maxDuration = mediaType === "voice" ? 60 : 90; // 60s for voice, 90s for video
+                    if (!duration || duration > maxDuration) {
+                        fs.unlinkSync(file.path);
+                        return res.status(400).json({ message: `${mediaType === "voice" ? "Voice message" : "Video"} duration exceeds ${maxDuration} seconds` });
+                    }
+                }
+
+                // Upload to Cloudinary with optimizations
+                const cloudinaryOptions: any = {
+                    resource_type: mediaType === "photo" ? "image" : "video",
+                    folder: `teenverse/dms/${mediaType}s`,
+                    timeout: 120000,
+                    fetch_format: "auto", // Automatically choose the best format (e.g., WebP for images, WebM for videos)
+                    quality: "auto:good", // Optimize quality while reducing file size
+                };
+
+                // Add transformations for videos and voice messages
+                if (mediaType === "video") {
+                    cloudinaryOptions.transformation = [
+                        { width: 1280, height: 720, crop: "scale" },
+                        { quality: "auto:good", fetch_format: "auto" },
+                        { video_codec: "h264", bit_rate: "1500k" },
+                        { audio_codec: "aac", audio_bit_rate: "128k" },
+                    ];
+                } else if (mediaType === "voice") {
+                    cloudinaryOptions.transformation = [
+                        { audio_codec: "mp3", audio_bit_rate: "64k" },
+                    ];
+                } else if (mediaType === "photo") {
+                    cloudinaryOptions.transformation = [
+                        { quality: "auto:good", fetch_format: "auto" },
+                    ];
+                }
+
+                const cloudinaryResult = await cloudinary.uploader.upload(file.path, cloudinaryOptions);
+                fs.unlinkSync(file.path);
+
+                mediaUrl = cloudinaryResult.secure_url;
+                finalMediaType = mediaType;
+            }
+
+            const createdAt = new Date().toISOString();
+            const message: Message = await new Promise<Message>((resolve, reject) => {
                 db.run(
-                    "INSERT INTO messages (conversation_id, sender_id, content, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?)",
-                    [conversation.id, sender.id, content, new Date().toISOString(), isGhostBomb ? 1 : 0],
-                    (err: Error | null) => {
+                    "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        conversation.id,
+                        sender.id,
+                        content || null,
+                        mediaUrl || null,
+                        finalMediaType || null,
+                        createdAt,
+                        isGhostBomb ? 1 : 0,
+                    ],
+                    function (err: Error | null) {
                         if (err) reject(err);
-                        resolve();
+                        db.get(
+                            "SELECT m.*, u.username as sender_username FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = ?",
+                            [this.lastID],
+                            (err: Error | null, row: Message) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            }
+                        );
                     }
                 );
             });
 
+            // Emit WebSocket event to the conversation room
+            io.to(`conversation:${conversation.id}`).emit("new_message", message);
 
             res.json({ message: "Message sent successfully", conversationId: conversation.id });
         } catch (err) {
+            if (file && fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path);
+            }
             console.error(`[${new Date().toISOString()}] Send message error:`, err);
             res.status(500).json({ message: "Internal server error" });
         }
@@ -251,7 +427,9 @@ export default function dmRoutes({ db }: RouteDependencies) {
                 });
             });
 
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>((resolve,ètent
+
+ reject) => {
                 db.run("UPDATE conversations SET is_boosted = 1 WHERE id = ?", [conversationId], (err: Error | null) => {
                     if (err) reject(err);
                     resolve();
@@ -291,7 +469,7 @@ export default function dmRoutes({ db }: RouteDependencies) {
             res.json({
                 username: user.username,
                 verified: user.verified,
-                coins: user.coins
+                coins: user.coins,
             });
         } catch (err) {
             console.error(`[${new Date().toISOString()}] Fetch user profile error:`, err);
