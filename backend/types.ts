@@ -71,16 +71,13 @@ export interface Message {
     id: number;
     conversation_id: number;
     sender_id: number;
-    content?: string | null;
-    media_url?: string | null;
-    media_type?: "voice" | "photo" | "video" | null;
+    content: string;
     created_at: string;
     is_ghost_bomb: number;
-    sender_username?: string;
 }
 
 export interface RouteDependencies {
     db: any;
     io?: any;
     SECRET_KEY?: string;
-    }
+}
