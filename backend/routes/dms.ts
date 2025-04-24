@@ -341,7 +341,7 @@ export default function dmRoutes({ db, io }: RouteDependencies) {
             }
 
             const createdAt = new Date().toISOString();
-            const message: Message = awaits new Promise<Message>((resolve, reject) => {
+            const message: Message = await new Promise<Message>((resolve, reject) => {
                 db.run(
                     "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     [
