@@ -462,7 +462,7 @@ db.run(`
 
     // Messages table (for DMs)
 db.run(`
-    CREATE TABLE IF NOT EXISTS messages_new (
+    CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         conversation_id INTEGER NOT NULL,
         sender_id INTEGER NOT NULL,
