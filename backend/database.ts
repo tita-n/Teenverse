@@ -461,18 +461,20 @@ db.run(`
     `);
 
     // Messages table (for DMs)
-    db.run(`
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
-            sender_id INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_ghost_bomb INTEGER DEFAULT 0,
-            FOREIGN KEY(conversation_id) REFERENCES conversations(id),
-            FOREIGN KEY(sender_id) REFERENCES users(id)
-        )
-    `);
+db.run(`
+    CREATE TABLE IF NOT EXISTS messages_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id INTEGER NOT NULL,
+        sender_id INTEGER NOT NULL,
+        content TEXT,
+        media_url TEXT,
+        media_type TEXT CHECK(media_type IN ('voice', 'photo', 'video')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_ghost_bomb INTEGER DEFAULT 0,
+        FOREIGN KEY(conversation_id) REFERENCES conversations(id),
+        FOREIGN KEY(sender_id) REFERENCES users(id)
+    )
+`);
 
     // Blocked Users table (for Privacy & Safety)
     db.run(`
