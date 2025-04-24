@@ -4,11 +4,7 @@ import multer from "multer";
 import fs from "fs";
 import { v2 as cloudinary } from "cloudinary";
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import { Server as SocketIOServer } from "socket.io";
-
-// Set FFmpeg path
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // Configure Cloudinary (ensure your environment variables are set)
 cloudinary.config({
@@ -118,8 +114,8 @@ export default function dmRoutes({ db, io }: RouteDependencies) {
                         ...conv,
                         latest_message: latestMessage
                             ? latestMessage.media_url
-                                ? `[${latestMessage.media_type}]`
-                                : latestMessage.content
+                                ? `[${latestMessage.media_type || "media"}]`
+                                : latestMessage.content || "No content"
                             : "No messages yet",
                         latest_message_time: latestMessage ? latestMessage.created_at : conv.created_at,
                     };
@@ -345,7 +341,7 @@ export default function dmRoutes({ db, io }: RouteDependencies) {
             }
 
             const createdAt = new Date().toISOString();
-            const message: Message = await new Promise<Message>((resolve, reject) => {
+            const message: Message = awaits new Promise<Message>((resolve, reject) => {
                 db.run(
                     "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     [
@@ -384,63 +380,63 @@ export default function dmRoutes({ db, io }: RouteDependencies) {
         }
     });
 
-  // Boost a chat
-router.post("/boost", async (req: express.Request, res: express.Response) => {
-    const { email, conversationId } = req.body;
-    const boostCost = 50;
-    if (!email || !conversationId) {
-        return res.status(400).json({ message: "Email and conversationId are required" });
-    }
-    if (!req.user || req.user.email !== email) {
-        return res.status(403).json({ message: "Unauthorized" });
-    }
-    try {
-        const user: User = await new Promise<User>((resolve, reject) => {
-            db.get("SELECT id, coins FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-        if (!user) return res.status(404).json({ message: "User not found" });
-
-        if (user.coins < boostCost) {
-            return res.status(400).json({ message: "Insufficient coins to boost chat" });
+    // Boost a chat
+    router.post("/boost", async (req: express.Request, res: express.Response) => {
+        const { email, conversationId } = req.body;
+        const boostCost = 50;
+        if (!email || !conversationId) {
+            return res.status(400).json({ message: "Email and conversationId are required" });
         }
-
-        const conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
-            db.get(
-                "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
-                [conversationId, user.id, user.id],
-                (err: Error | null, row: Conversation) => {
+        if (!req.user || req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        try {
+            const user: User = await new Promise<User>((resolve, reject) => {
+                db.get("SELECT id, coins FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
                     if (err) reject(err);
                     resolve(row);
-                }
-            );
-        });
-        if (!conversation) return res.status(404).json({ message: "Conversation not found or you are not a participant" });
-
-        const newCoins = user.coins - boostCost;
-        await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err: Error | null) => {
-                if (err) reject(err);
-                resolve();
+                });
             });
-        });
+            if (!user) return res.status(404).json({ message: "User not found" });
 
-        await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE conversations SET is_boosted = 1 WHERE id = ?", [conversationId], (err: Error | null) => {
-                if (err) reject(err);
-                resolve();
+            if (user.coins < boostCost) {
+                return res.status(400).json({ message: "Insufficient coins to boost chat" });
+            }
+
+            const conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
+                db.get(
+                    "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+                    [conversationId, user.id, user.id],
+                    (err: Error | null, row: Conversation) => {
+                        if (err) reject(err);
+                        resolve(row);
+                    }
+                );
             });
-        });
+            if (!conversation) return res.status(404).json({ message: "Conversation not found or you are not a participant" });
 
-        res.json({ message: "Chat boosted successfully", newCoins });
-    } catch (err) {
-        console.error(`[${new Date().toISOString()}] Boost chat error:`, err);
-        res.status(500).json({ message: "Internal server error" });
-    }
-});
-    
+            const newCoins = user.coins - boostCost;
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err: Error | null) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE conversations SET is_boosted = 1 WHERE id = ?", [conversationId], (err: Error | null) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.json({ message: "Chat boosted successfully", newCoins });
+        } catch (err) {
+            console.error(`[${new Date().toISOString()}] Boost chat error:`, err);
+            res.status(500).json({ message: "Internal server error" });
+        }
+    });
+
     // View user profile (using username instead of email)
     router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
         const targetUsername = req.params.username;
@@ -476,4 +472,4 @@ router.post("/boost", async (req: express.Request, res: express.Response) => {
     });
 
     return router;
-}
+                }
