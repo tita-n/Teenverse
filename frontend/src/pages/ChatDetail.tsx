@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { AudioRecorder } from "react-audio-recorder";
 
 interface Message {
     id: number;
@@ -25,12 +24,8 @@ export default function ChatDetail() {
     const [isGhostBomb, setIsGhostBomb] = useState(false);
     const [error, setError] = useState<string>("");
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         const fetchMessages = async () => {
@@ -61,32 +56,8 @@ export default function ChatDetail() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    useEffect(() => {
-        if (isRecording) {
-            recordingIntervalRef.current = setInterval(() => {
-                setRecordingTime((prev) => {
-                    const newTime = prev + 1;
-                    if (newTime >= 60) {
-                        setIsRecording(false);
-                        alert("Voice note cannot exceed 60 seconds.");
-                    }
-                    return newTime;
-                });
-            }, 1000);
-        } else {
-            if (recordingIntervalRef.current) {
-                clearInterval(recordingIntervalRef.current);
-                recordingIntervalRef.current = null;
-            }
-            setRecordingTime(0);
-        }
-        return () => {
-            if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-        };
-    }, [isRecording]);
-
     const handleSendMessage = async () => {
-        if (!newMessage.trim() && !selectedFile && !recordedBlob) return;
+        if (!newMessage.trim() && !selectedFile) return;
 
         try {
             const formData = new FormData();
@@ -100,12 +71,6 @@ export default function ChatDetail() {
                     return;
                 }
                 formData.append("media", selectedFile);
-            } else if (recordedBlob) {
-                if (recordedBlob.size > 10 * 1024 * 1024) {
-                    setError("Voice note size exceeds 10MB limit.");
-                    return;
-                }
-                formData.append("media", recordedBlob, "voice_note.mp3");
             }
 
             await axios.post("/api/dms/send", formData, {
@@ -118,12 +83,11 @@ export default function ChatDetail() {
             setNewMessage("");
             setIsGhostBomb(false);
             setSelectedFile(null);
-            setRecordedBlob(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
 
             const messagesResponse = await axios.get(`/api/dms/messages/${conversationId}?email=${user.email}`, {
                 headers: { Authorization: `Bearer ${token}` },
-            });
+                });
             setMessages(messagesResponse.data);
         } catch (err) {
             console.error("Error sending message:", err);
@@ -159,13 +123,7 @@ export default function ChatDetail() {
                 return;
             }
             setSelectedFile(file);
-            setRecordedBlob(null);
         }
-    };
-
-    const handleAudioStop = (audioData: Blob) => {
-        setRecordedBlob(audioData);
-        setIsRecording(false);
     };
 
     if (!user || !token) {
@@ -344,31 +302,10 @@ export default function ChatDetail() {
                         cursor: "pointer",
                         fontSize: "14px",
                     }}
+                    title="Attach photo, video, or audio (up to 10MB, audio max 60s)"
                 >
                     📎
                 </button>
-                <AudioRecorder
-                    onRecordingComplete={handleAudioStop}
-                    onRecordingStart={() => setIsRecording(true)}
-                    onRecordingCancel={() => setIsRecording(false)}
-                    audioConstraints={{ mimeType: "audio/mp3" }}
-                    render={({ startRecording, stopRecording, isRecording: recorderIsRecording }) => (
-                        <button
-                            onClick={recorderIsRecording ? stopRecording : startRecording}
-                            style={{
-                                backgroundColor: recorderIsRecording ? "#ff4444" : "#00a884",
-                                color: "white",
-                                padding: "10px",
-                                borderRadius: "20px",
-                                border: "none",
-                                cursor: "pointer",
-                                fontSize: "14px",
-                            }}
-                        >
-                            {recorderIsRecording ? `Stop (${recordingTime}s)` : "🎙️"}
-                        </button>
-                    )}
-                />
                 <input
                     type="text"
                     value={newMessage}
@@ -405,9 +342,9 @@ export default function ChatDetail() {
                 >
                     Send
                 </button>
-                {(selectedFile || recordedBlob) && (
+                {selectedFile && (
                     <div style={{ width: "100%", fontSize: "12px", color: "#667781" }}>
-                        {selectedFile ? `Selected: ${selectedFile.name}` : "Voice note recorded"}
+                        Selected: {selectedFile.name}
                     </div>
                 )}
             </div>
