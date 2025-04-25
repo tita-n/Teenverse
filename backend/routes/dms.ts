@@ -1,5 +1,30 @@
 import express from "express";
 import { RouteDependencies, Conversation, Message, User } from "../types";
+import multer from "multer";
+import cloudinary from "cloudinary";
+import { v4 as uuidv4 } from "uuid";
+
+// Configure Cloudinary
+cloudinary.v2.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Configure Multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ["image/jpeg", "image/png", "video/mp4", "audio/mpeg", "audio/wav"];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Invalid file type. Only JPEG, PNG, MP4, MP3, and WAV are allowed."));
+        }
+    },
+});
 
 export default function dmRoutes({ db }: RouteDependencies) {
     const router = express.Router();
@@ -129,10 +154,11 @@ export default function dmRoutes({ db }: RouteDependencies) {
     });
 
     // Start a new conversation or send a message
-    router.post("/send", async (req: express.Request, res: express.Response) => {
+    router.post("/send", upload.single("media"), async (req: express.Request, res: express.Response) => {
         const { email, recipientUsername, content, isGhostBomb = false } = req.body;
-        if (!email || !recipientUsername || !content) {
-            return res.status(400).json({ message: "Email, recipientUsername, and content are required" });
+        const file = req.file;
+        if (!email || !recipientUsername || (!content && !file)) {
+            return res.status(400).json({ message: "Email, recipientUsername, and either content or media are required" });
         }
         if (!req.user || req.user.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
@@ -189,17 +215,65 @@ export default function dmRoutes({ db }: RouteDependencies) {
                 });
             }
 
+            let mediaUrl: string | null = null;
+            let mediaType: string | null = null;
+
+            if (file) {
+                // Validate voice note duration (if audio)
+                if (file.mimetype.startsWith("audio")) {
+                    // Note: To validate duration, you’d typically need a library like `ffmpeg` or `get-audio-duration`.
+                    // For simplicity, we’ll assume the frontend enforces the 60-second limit.
+                    // If you want server-side validation, add a library like `get-audio-duration`.
+                }
+
+                // Upload to Cloudinary with optimization
+                const uploadResult = await new Promise((resolve, reject) => {
+                    const stream = cloudinary.v2.uploader.upload_stream(
+                        {
+                            resource_type: file.mimetype.startsWith("image")
+                                ? "image"
+                                : file.mimetype.startsWith("video")
+                                ? "video"
+                                : "auto",
+                            public_id: `chat_media_${uuidv4()}`,
+                            transformation: [
+                                { quality: "auto:low", fetch_format: "auto" }, // Optimize size without quality loss
+                            ],
+                        },
+                        (error, result) => {
+                            if (error) reject(error);
+                            resolve(result);
+                        }
+                    );
+                    stream.end(file.buffer);
+                });
+
+                mediaUrl = uploadResult.secure_url;
+                mediaType = file.mimetype.startsWith("image")
+                    ? "image"
+                    : file.mimetype.startsWith("video")
+                    ? "video"
+                    : "audio";
+            }
+
             await new Promise<void>((resolve, reject) => {
                 db.run(
-                    "INSERT INTO messages (conversation_id, sender_id, content, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?)",
-                    [conversation.id, sender.id, content, new Date().toISOString(), isGhostBomb ? 1 : 0],
+                    "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        conversation.id,
+                        sender.id,
+                        content || "",
+                        mediaUrl,
+                        mediaType,
+                        new Date().toISOString(),
+                        isGhostBomb ? 1 : 0,
+                    ],
                     (err: Error | null) => {
                         if (err) reject(err);
                         resolve();
                     }
                 );
             });
-
 
             res.json({ message: "Message sent successfully", conversationId: conversation.id });
         } catch (err) {
@@ -300,4 +374,4 @@ export default function dmRoutes({ db }: RouteDependencies) {
     });
 
     return router;
-                }
+}
