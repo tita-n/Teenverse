@@ -2,11 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { ReactMic } from "react-mic";
 
 interface Message {
     id: number;
     sender_username: string;
     content: string;
+    media_url?: string;
+    media_type?: string;
     created_at: string;
     is_ghost_bomb: number;
 }
@@ -21,7 +24,13 @@ export default function ChatDetail() {
     const [newMessage, setNewMessage] = useState("");
     const [isGhostBomb, setIsGhostBomb] = useState(false);
     const [error, setError] = useState<string>("");
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+    const [recordingTime, setRecordingTime] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         const fetchMessages = async () => {
@@ -52,25 +61,65 @@ export default function ChatDetail() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
+    useEffect(() => {
+        if (isRecording) {
+            recordingIntervalRef.current = setInterval(() => {
+                setRecordingTime((prev) => {
+                    const newTime = prev + 1;
+                    if (newTime >= 60) {
+                        stopRecording();
+                        alert("Voice note cannot exceed 60 seconds.");
+                    }
+                    return newTime;
+                });
+            }, 1000);
+        } else {
+            if (recordingIntervalRef.current) {
+                clearInterval(recordingIntervalRef.current);
+                recordingIntervalRef.current = null;
+            }
+            setRecordingTime(0);
+        }
+        return () => {
+            if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        };
+    }, [isRecording]);
+
     const handleSendMessage = async () => {
-        if (!newMessage.trim()) return;
+        if (!newMessage.trim() && !selectedFile && !recordedBlob) return;
 
         try {
-            await axios.post(
-                "/api/dms/send",
-                {
-                    email: user.email,
-                    recipientUsername: otherUsername,
-                    content: newMessage,
-                    isGhostBomb,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
+            const formData = new FormData();
+            formData.append("email", user.email);
+            formData.append("recipientUsername", otherUsername);
+            formData.append("content", newMessage);
+            formData.append("isGhostBomb", isGhostBomb ? "true" : "false");
+            if (selectedFile) {
+                if (selectedFile.size > 10 * 1024 * 1024) {
+                    setError("File size exceeds 10MB limit.");
+                    return;
                 }
-            );
+                formData.append("media", selectedFile);
+            } else if (recordedBlob) {
+                if (recordedBlob.size > 10 * 1024 * 1024) {
+                    setError("Voice note size exceeds 10MB limit.");
+                    return;
+                }
+                formData.append("media", recordedBlob, "voice_note.mp3");
+            }
+
+            await axios.post("/api/dms/send", formData, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "multipart/form-data",
+                },
+            });
 
             setNewMessage("");
             setIsGhostBomb(false);
+            setSelectedFile(null);
+            setRecordedBlob(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
 
             const messagesResponse = await axios.get(`/api/dms/messages/${conversationId}?email=${user.email}`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -100,6 +149,35 @@ export default function ChatDetail() {
 
     const handleViewProfile = () => {
         navigate(`/profile/${otherUsername}`);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.size > 10 * 1024 * 1024) {
+                setError("File size exceeds 10MB limit.");
+                return;
+            }
+            setSelectedFile(file);
+            setRecordedBlob(null);
+        }
+    };
+
+    const startRecording = () => {
+        setIsRecording(true);
+        setSelectedFile(null);
+    };
+
+    const stopRecording = () => {
+        setIsRecording(false);
+    };
+
+    const onData = (recordedBlob: Blob) => {
+        // Real-time data, not used in this case
+    };
+
+    const onStop = (recordedBlob: Blob) => {
+        setRecordedBlob(recordedBlob);
     };
 
     if (!user || !token) {
@@ -208,7 +286,30 @@ export default function ChatDetail() {
                                 position: "relative",
                             }}
                         >
-                            <p style={{ fontSize: "14px", margin: 0 }}>{msg.content}</p>
+                            {msg.media_url && msg.media_type === "image" && (
+                                <img
+                                    src={msg.media_url}
+                                    alt="Chat media"
+                                    style={{ maxWidth: "100%", borderRadius: "10px", marginBottom: "5px" }}
+                                />
+                            )}
+                            {msg.media_url && msg.media_type === "video" && (
+                                <video
+                                    src={msg.media_url}
+                                    controls
+                                    style={{ maxWidth: "100%", borderRadius: "10px", marginBottom: "5px" }}
+                                />
+                            )}
+                            {msg.media_url && msg.media_type === "audio" && (
+                                <audio
+                                    src={msg.media_url}
+                                    controls
+                                    style={{ width: "100%", marginBottom: "5px" }}
+                                />
+                            )}
+                            {msg.content && (
+                                <p style={{ fontSize: "14px", margin: 0 }}>{msg.content}</p>
+                            )}
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "5px" }}>
                                 {msg.is_ghost_bomb && (
                                     <small style={{ fontSize: "10px", opacity: 0.7 }}>
@@ -234,8 +335,51 @@ export default function ChatDetail() {
                     boxShadow: "0 -1px 3px rgba(0,0,0,0.1)",
                     position: "sticky",
                     bottom: 0,
+                    flexWrap: "wrap",
                 }}
             >
+                <input
+                    type="file"
+                    accept="image/jpeg,image/png,video/mp4,audio/mpeg,audio/wav"
+                    onChange={handleFileChange}
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                />
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                        backgroundColor: "#00a884",
+                        color: "white",
+                        padding: "10px",
+                        borderRadius: "20px",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                    }}
+                >
+                    📎
+                </button>
+                <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    style={{
+                        backgroundColor: isRecording ? "#ff4444" : "#00a884",
+                        color: "white",
+                        padding: "10px",
+                        borderRadius: "20px",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                    }}
+                >
+                    {isRecording ? `Stop (${recordingTime}s)` : "🎙️"}
+                </button>
+                <ReactMic
+                    record={isRecording}
+                    onStop={onStop}
+                    onData={onData}
+                    mimeType="audio/mp3"
+                    className="hidden"
+                />
                 <input
                     type="text"
                     value={newMessage}
@@ -272,7 +416,12 @@ export default function ChatDetail() {
                 >
                     Send
                 </button>
+                {(selectedFile || recordedBlob) && (
+                    <div style={{ width: "100%", fontSize: "12px", color: "#667781" }}>
+                        {selectedFile ? `Selected: ${selectedFile.name}` : "Voice note recorded"}
+                    </div>
+                )}
             </div>
         </div>
     );
-                                                                                              }
+}
