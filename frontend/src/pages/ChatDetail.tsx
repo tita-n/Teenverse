@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { ReactMic } from "react-mic";
+import { AudioRecorder } from "react-audio-recorder";
 
 interface Message {
     id: number;
@@ -25,8 +25,8 @@ export default function ChatDetail() {
     const [isGhostBomb, setIsGhostBomb] = useState(false);
     const [error, setError] = useState<string>("");
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [isRecording, setIsRecording] = useState(false);
     const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+    const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,7 +67,7 @@ export default function ChatDetail() {
                 setRecordingTime((prev) => {
                     const newTime = prev + 1;
                     if (newTime >= 60) {
-                        stopRecording();
+                        setIsRecording(false);
                         alert("Voice note cannot exceed 60 seconds.");
                     }
                     return newTime;
@@ -163,21 +163,9 @@ export default function ChatDetail() {
         }
     };
 
-    const startRecording = () => {
-        setIsRecording(true);
-        setSelectedFile(null);
-    };
-
-    const stopRecording = () => {
+    const handleAudioStop = (audioData: Blob) => {
+        setRecordedBlob(audioData);
         setIsRecording(false);
-    };
-
-    const onData = (recordedBlob: Blob) => {
-        // Real-time data, not used in this case
-    };
-
-    const onStop = (recordedBlob: Blob) => {
-        setRecordedBlob(recordedBlob);
     };
 
     if (!user || !token) {
@@ -359,26 +347,27 @@ export default function ChatDetail() {
                 >
                     📎
                 </button>
-                <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    style={{
-                        backgroundColor: isRecording ? "#ff4444" : "#00a884",
-                        color: "white",
-                        padding: "10px",
-                        borderRadius: "20px",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                    }}
-                >
-                    {isRecording ? `Stop (${recordingTime}s)` : "🎙️"}
-                </button>
-                <ReactMic
-                    record={isRecording}
-                    onStop={onStop}
-                    onData={onData}
-                    mimeType="audio/mp3"
-                    className="hidden"
+                <AudioRecorder
+                    onRecordingComplete={handleAudioStop}
+                    onRecordingStart={() => setIsRecording(true)}
+                    onRecordingCancel={() => setIsRecording(false)}
+                    audioConstraints={{ mimeType: "audio/mp3" }}
+                    render={({ startRecording, stopRecording, isRecording: recorderIsRecording }) => (
+                        <button
+                            onClick={recorderIsRecording ? stopRecording : startRecording}
+                            style={{
+                                backgroundColor: recorderIsRecording ? "#ff4444" : "#00a884",
+                                color: "white",
+                                padding: "10px",
+                                borderRadius: "20px",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: "14px",
+                            }}
+                        >
+                            {recorderIsRecording ? `Stop (${recordingTime}s)` : "🎙️"}
+                        </button>
+                    )}
                 />
                 <input
                     type="text"
