@@ -37,15 +37,15 @@ db.serialize(() => {
             losses INTEGER DEFAULT 0,
             title TEXT,
             legend_status TEXT DEFAULT '',
-            bio TEXT, -- Added for profile settings
-            background_theme TEXT DEFAULT 'default', -- Added for profile settings
-            spending_restrictions BOOLEAN DEFAULT 0, -- Added for economy settings
-            auto_earn_uploads BOOLEAN DEFAULT 1, -- Added for economy settings
-            theme TEXT DEFAULT 'Neon Glow', -- Added for customization settings
-            animations_enabled BOOLEAN DEFAULT 1, -- Added for customization settings
-            font_size TEXT DEFAULT 'medium', -- Added for customization settings
-            language TEXT DEFAULT 'en', -- Added for customization settings
-            snitch_risk INTEGER DEFAULT 0 -- Added for privacy settings
+            bio TEXT,
+            background_theme TEXT DEFAULT 'default',
+            spending_restrictions BOOLEAN DEFAULT 0,
+            auto_earn_uploads BOOLEAN DEFAULT 1,
+            theme TEXT DEFAULT 'Neon Glow',
+            animations_enabled BOOLEAN DEFAULT 1,
+            font_size TEXT DEFAULT 'medium',
+            language TEXT DEFAULT 'en',
+            snitch_risk INTEGER DEFAULT 0
         )
     `);
 
@@ -213,6 +213,7 @@ db.serialize(() => {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             closed INTEGER DEFAULT 0,
             tournament_id INTEGER,
+            opponent_media_url TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(opponent_id) REFERENCES users(id),
             FOREIGN KEY(team_id) REFERENCES teams(id),
@@ -234,10 +235,7 @@ db.serialize(() => {
             UNIQUE(user_id, battle_id)
         )
     `);
-db.run(`
-    ALTER TABLE hype_battles ADD COLUMN opponent_media_url TEXT
-`);
-    
+
     // Showdown Votes table
     db.run(`
         CREATE TABLE IF NOT EXISTS showdown_votes (
@@ -467,6 +465,8 @@ db.run(`
             conversation_id INTEGER NOT NULL,
             sender_id INTEGER NOT NULL,
             content TEXT NOT NULL,
+            media_url TEXT,
+            media_type TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_ghost_bomb INTEGER DEFAULT 0,
             FOREIGN KEY(conversation_id) REFERENCES conversations(id),
@@ -540,7 +540,7 @@ db.run(`
         )
     `);
 
-    // Comment Likes table (for additional feature)
+    // Comment Likes table
     db.run(`
         CREATE TABLE IF NOT EXISTS comment_likes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -553,7 +553,7 @@ db.run(`
         )
     `);
 
-    // Post Shares table (for additional feature)
+    // Post Shares table
     db.run(`
         CREATE TABLE IF NOT EXISTS post_shares (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
