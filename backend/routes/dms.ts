@@ -2,7 +2,6 @@ import express from "express";
 import { RouteDependencies, Conversation, Message, User } from "../types";
 import multer from "multer";
 import cloudinary from "cloudinary";
-import { v4 as uuidv4 } from "uuid";
 
 // Configure Cloudinary
 cloudinary.v2.config({
@@ -29,7 +28,7 @@ const upload = multer({
 export default function dmRoutes({ db }: RouteDependencies) {
     const router = express.Router();
 
-    // Get list of conversations (chat list page)
+    // Get all conversations for a user
     router.get("/conversations", async (req: express.Request, res: express.Response) => {
         const { email } = req.query;
         if (!email || typeof email !== "string") {
@@ -39,95 +38,78 @@ export default function dmRoutes({ db }: RouteDependencies) {
             return res.status(403).json({ message: "Unauthorized" });
         }
         try {
-            const user: User = await new Promise<User>((resolve, reject) => {
-                db.get("SELECT id, username FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
+            const user: User = await new Promise((resolve, reject) => {
+                db.get("SELECT id FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
                     if (err) reject(err);
+                    if (!row) reject(new Error("User not found"));
                     resolve(row);
                 });
             });
-            if (!user) return res.status(404).json({ message: "User not found" });
 
-            const conversations: any[] = await new Promise<any[]>((resolve, reject) => {
+            const conversations: Conversation[] = await new Promise((resolve, reject) => {
                 db.all(
-                    `SELECT c.*, 
-                            CASE 
-                                WHEN c.user1_id = ? THEN u2.username 
-                                WHEN c.user2_id = ? THEN u1.username 
-                            END as other_username
+                    `
+                    SELECT c.*, u1.username as user1_username, u2.username as user2_username
                     FROM conversations c
-                    LEFT JOIN users u1 ON c.user1_id = u1.id
-                    LEFT JOIN users u2 ON c.user2_id = u2.id
+                    JOIN users u1 ON c.user1_id = u1.id
+                    JOIN users u2 ON c.user2_id = u2.id
                     WHERE c.user1_id = ? OR c.user2_id = ?
-                    ORDER BY c.is_boosted DESC, c.created_at DESC`,
-                    [user.id, user.id, user.id, user.id],
-                    (err: Error | null, rows: any[]) => {
+                    `,
+                    [user.id, user.id],
+                    (err: Error | null, rows: Conversation[]) => {
                         if (err) reject(err);
                         resolve(rows);
                     }
                 );
             });
 
-            const conversationsWithLatestMessage = await Promise.all(
-                conversations.map(async (conv: any) => {
-                    const latestMessage: Message = await new Promise<Message>((resolve, reject) => {
-                        db.get(
-                            "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1",
-                            [conv.id],
-                            (err: Error | null, row: Message) => {
-                                if (err) reject(err);
-                                resolve(row);
-                            }
-                        );
-                    });
-                    return {
-                        ...conv,
-                        latest_message: latestMessage ? latestMessage.content : "No messages yet",
-                        latest_message_time: latestMessage ? latestMessage.created_at : conv.created_at
-                    };
-                })
-            );
-
-            res.json(conversationsWithLatestMessage);
+            res.json(conversations);
         } catch (err) {
-            console.error(`[${new Date().toISOString()}] Fetch conversations error:`, err);
+            console.error(`[${new Date().toISOString()}] Get conversations error:`, err);
             res.status(500).json({ message: "Internal server error" });
         }
     });
 
-    // Get messages for a specific conversation (chat detail page)
+    // Get messages for a conversation
     router.get("/messages/:conversationId", async (req: express.Request, res: express.Response) => {
+        const { conversationId } = req.params;
         const { email } = req.query;
-        const conversationId = parseInt(req.params.conversationId);
-        if (!email || typeof email !== "string" || isNaN(conversationId)) {
-            return res.status(400).json({ message: "Email and conversationId are required" });
+        if (!email || typeof email !== "string") {
+            return res.status(400).json({ message: "Email is required" });
         }
         if (!req.user || req.user.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
         }
         try {
-            const user: User = await new Promise<User>((resolve, reject) => {
+            const user: User = await new Promise((resolve, reject) => {
                 db.get("SELECT id FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
                     if (err) reject(err);
+                    if (!row) reject(new Error("User not found"));
                     resolve(row);
                 });
             });
-            if (!user) return res.status(404).json({ message: "User not found" });
 
-            const conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
+            const conversation: Conversation = await new Promise((resolve, reject) => {
                 db.get(
                     "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
                     [conversationId, user.id, user.id],
                     (err: Error | null, row: Conversation) => {
                         if (err) reject(err);
+                        if (!row) reject(new Error("Conversation not found or unauthorized"));
                         resolve(row);
                     }
                 );
             });
-            if (!conversation) return res.status(404).json({ message: "Conversation not found or you are not a participant" });
 
-            const messages: Message[] = await new Promise<Message[]>((resolve, reject) => {
+            const messages: Message[] = await new Promise((resolve, reject) => {
                 db.all(
-                    "SELECT m.*, u.username as sender_username FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.conversation_id = ? ORDER BY m.created_at ASC",
+                    `
+                    SELECT m.*, u.username as sender_username
+                    FROM messages m
+                    JOIN users u ON m.sender_id = u.id
+                    WHERE m.conversation_id = ?
+                    ORDER BY m.created_at ASC
+                    `,
                     [conversationId],
                     (err: Error | null, rows: Message[]) => {
                         if (err) reject(err);
@@ -136,20 +118,69 @@ export default function dmRoutes({ db }: RouteDependencies) {
                 );
             });
 
-            const currentTime = new Date();
-            const filteredMessages = messages.filter((msg) => {
-                if (msg.is_ghost_bomb) {
-                    const sentTime = new Date(msg.created_at);
-                    const timeDiff = (currentTime.getTime() - sentTime.getTime()) / 1000;
-                    return timeDiff <= 10;
-                }
-                return true;
+            res.json(messages);
+        } catch (err) {
+            console.error(`[${new Date().toISOString()}] Get messages error:`, err);
+            res.status(500).json({ message: err.message || "Internal server error" });
+        }
+    });
+
+    // Boost a conversation
+    router.post("/boost", async (req: express.Request, res: express.Response) => {
+        const { email, conversationId } = req.body;
+        if (!email || !conversationId) {
+            return res.status(400).json({ message: "Email and conversationId are required" });
+        }
+        if (!req.user || req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+        try {
+            const user: User = await new Promise((resolve, reject) => {
+                db.get("SELECT id, coins FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
+                    if (err) reject(err);
+                    if (!row) reject(new Error("User not found"));
+                    resolve(row);
+                });
             });
 
-            res.json(filteredMessages);
+            if (user.coins < 50) {
+                return res.status(400).json({ message: "Insufficient coins. Boosting requires 50 coins." });
+            }
+
+            const conversation: Conversation = await new Promise((resolve, reject) => {
+                db.get(
+                    "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
+                    [conversationId, user.id, user.id],
+                    (err: Error | null, row: Conversation) => {
+                        if (err) reject(err);
+                        if (!row) reject(new Error("Conversation not found or unauthorized"));
+                        resolve(row);
+                    }
+                );
+            });
+
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE users SET coins = coins - 50 WHERE id = ?", [user.id], (err: Error | null) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            await new Promise<void>((resolve, reject) => {
+                db.run(
+                    "UPDATE conversations SET boost_count = boost_count + 1 WHERE id = ?",
+                    [conversationId],
+                    (err: Error | null) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            res.json({ message: "Conversation boosted successfully" });
         } catch (err) {
-            console.error(`[${new Date().toISOString()}] Fetch messages error:`, err);
-            res.status(500).json({ message: "Internal server error" });
+            console.error(`[${new Date().toISOString()}] Boost error:`, err);
+            res.status(500).json({ message: err.message || "Internal server error" });
         }
     });
 
@@ -219,15 +250,8 @@ export default function dmRoutes({ db }: RouteDependencies) {
             let mediaType: string | null = null;
 
             if (file) {
-                // Validate voice note duration (if audio)
-                if (file.mimetype.startsWith("audio")) {
-                    // Note: To validate duration, you’d typically need a library like `ffmpeg` or `get-audio-duration`.
-                    // For simplicity, we’ll assume the frontend enforces the 60-second limit.
-                    // If you want server-side validation, add a library like `get-audio-duration`.
-                }
-
-                // Upload to Cloudinary with optimization
-                const uploadResult = await new Promise((resolve, reject) => {
+                // Upload to Cloudinary
+                const uploadResult = await new Promise<cloudinary.UploadApiResponse>((resolve, reject) => {
                     const stream = cloudinary.v2.uploader.upload_stream(
                         {
                             resource_type: file.mimetype.startsWith("image")
@@ -235,13 +259,11 @@ export default function dmRoutes({ db }: RouteDependencies) {
                                 : file.mimetype.startsWith("video")
                                 ? "video"
                                 : "auto",
-                            public_id: `chat_media_${uuidv4()}`,
-                            transformation: [
-                                { quality: "auto:low", fetch_format: "auto" }, // Optimize size without quality loss
-                            ],
+                            transformation: [{ quality: "auto:low", fetch_format: "auto" }],
                         },
                         (error, result) => {
                             if (error) reject(error);
+                            if (!result) reject(new Error("Upload failed"));
                             resolve(result);
                         }
                     );
@@ -282,96 +304,28 @@ export default function dmRoutes({ db }: RouteDependencies) {
         }
     });
 
-    // Boost a chat
-    router.post("/boost", async (req: express.Request, res: express.Response) => {
-        const { email, conversationId } = req.body;
-        const boostCost = 50;
-        if (!email || !conversationId) {
-            return res.status(400).json({ message: "Email and conversationId are required" });
-        }
-        if (!req.user || req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
-        }
-        try {
-            const user: User = await new Promise<User>((resolve, reject) => {
-                db.get("SELECT id, coins FROM users WHERE email = ?", [email], (err: Error | null, row: User) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
-            });
-            if (!user) return res.status(404).json({ message: "User not found" });
-
-            if (user.coins < boostCost) {
-                return res.status(400).json({ message: "Insufficient coins to boost chat" });
-            }
-
-            const conversation: Conversation = await new Promise<Conversation>((resolve, reject) => {
-                db.get(
-                    "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)",
-                    [conversationId, user.id, user.id],
-                    (err: Error | null, row: Conversation) => {
-                        if (err) reject(err);
-                        resolve(row);
-                    }
-                );
-            });
-            if (!conversation) return res.status(404).json({ message: "Conversation not found or you are not a participant" });
-
-            const newCoins = user.coins - boostCost;
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err: Error | null) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            await new Promise<void>((resolve, reject) => {
-                db.run("UPDATE conversations SET is_boosted = 1 WHERE id = ?", [conversationId], (err: Error | null) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            res.json({ message: "Chat boosted successfully", newCoins });
-        } catch (err) {
-            console.error(`[${new Date().toISOString()}] Boost chat error:`, err);
-            res.status(500).json({ message: "Internal server error" });
-        }
-    });
-
-    // View user profile (using username instead of email)
+    // Get user profile
     router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
-        const targetUsername = req.params.username;
-        const { email } = req.query;
-        if (!targetUsername || !email || typeof email !== "string") {
-            return res.status(400).json({ message: "Target username and requester email are required" });
-        }
-        if (!req.user || req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
-        }
+        const { username } = req.params;
         try {
-            const user: User = await new Promise<User>((resolve, reject) => {
+            const user: User = await new Promise((resolve, reject) => {
                 db.get(
-                    "SELECT username, verified, coins FROM users WHERE username = ?",
-                    [targetUsername],
+                    "SELECT username, bio, profile_picture_url FROM users WHERE username = ?",
+                    [username],
                     (err: Error | null, row: User) => {
                         if (err) reject(err);
+                        if (!row) reject(new Error("User not found"));
                         resolve(row);
                     }
                 );
             });
-            if (!user) return res.status(404).json({ message: "User not found" });
 
-            res.json({
-                username: user.username,
-                verified: user.verified,
-                coins: user.coins
-            });
+            res.json(user);
         } catch (err) {
-            console.error(`[${new Date().toISOString()}] Fetch user profile error:`, err);
-            res.status(500).json({ message: "Internal server error" });
+            console.error(`[${new Date().toISOString()}] Get profile error:`, err);
+            res.status(404).json({ message: err.message || "User not found" });
         }
     });
 
     return router;
-}
+                    }
