@@ -22,10 +22,9 @@ export default function ChatDetail() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
     const [isGhostBomb, setIsGhostBomb] = useState(false);
+    const [file, setFile] = useState<File | null>(null);
     const [error, setError] = useState<string>("");
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const fetchMessages = async () => {
@@ -47,7 +46,6 @@ export default function ChatDetail() {
         };
 
         fetchMessages();
-
         const interval = setInterval(fetchMessages, 5000);
         return () => clearInterval(interval);
     }, [conversationId, user, token, navigate]);
@@ -57,22 +55,16 @@ export default function ChatDetail() {
     }, [messages]);
 
     const handleSendMessage = async () => {
-        if (!newMessage.trim() && !selectedFile) return;
+        if (!newMessage.trim() && !file) return;
+
+        const formData = new FormData();
+        formData.append("email", user.email);
+        formData.append("recipientUsername", otherUsername);
+        if (newMessage.trim()) formData.append("content", newMessage);
+        if (isGhostBomb) formData.append("isGhostBomb", "true");
+        if (file) formData.append("media", file);
 
         try {
-            const formData = new FormData();
-            formData.append("email", user.email);
-            formData.append("recipientUsername", otherUsername);
-            formData.append("content", newMessage);
-            formData.append("isGhostBomb", isGhostBomb ? "true" : "false");
-            if (selectedFile) {
-                if (selectedFile.size > 10 * 1024 * 1024) {
-                    setError("File size exceeds 10MB limit.");
-                    return;
-                }
-                formData.append("media", selectedFile);
-            }
-
             await axios.post("/api/dms/send", formData, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -82,16 +74,21 @@ export default function ChatDetail() {
 
             setNewMessage("");
             setIsGhostBomb(false);
-            setSelectedFile(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
+            setFile(null);
 
             const messagesResponse = await axios.get(`/api/dms/messages/${conversationId}?email=${user.email}`, {
                 headers: { Authorization: `Bearer ${token}` },
-                });
+            });
             setMessages(messagesResponse.data);
         } catch (err) {
             console.error("Error sending message:", err);
             setError("Failed to send message: " + (err.response?.data?.message || err.message));
+        }
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setFile(e.target.files[0]);
         }
     };
 
@@ -113,17 +110,6 @@ export default function ChatDetail() {
 
     const handleViewProfile = () => {
         navigate(`/profile/${otherUsername}`);
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            if (file.size > 10 * 1024 * 1024) {
-                setError("File size exceeds 10MB limit.");
-                return;
-            }
-            setSelectedFile(file);
-        }
     };
 
     if (!user || !token) {
@@ -232,29 +218,17 @@ export default function ChatDetail() {
                                 position: "relative",
                             }}
                         >
-                            {msg.media_url && msg.media_type === "image" && (
-                                <img
-                                    src={msg.media_url}
-                                    alt="Chat media"
-                                    style={{ maxWidth: "100%", borderRadius: "10px", marginBottom: "5px" }}
-                                />
-                            )}
-                            {msg.media_url && msg.media_type === "video" && (
-                                <video
-                                    src={msg.media_url}
-                                    controls
-                                    style={{ maxWidth: "100%", borderRadius: "10px", marginBottom: "5px" }}
-                                />
-                            )}
-                            {msg.media_url && msg.media_type === "audio" && (
-                                <audio
-                                    src={msg.media_url}
-                                    controls
-                                    style={{ width: "100%", marginBottom: "5px" }}
-                                />
-                            )}
                             {msg.content && (
                                 <p style={{ fontSize: "14px", margin: 0 }}>{msg.content}</p>
+                            )}
+                            {msg.media_url && msg.media_type === "image" && (
+                                <img src={msg.media_url} alt="media" style={{ maxWidth: "100%", borderRadius: "10px", marginTop: "5px" }} />
+                            )}
+                            {msg.media_url && msg.media_type === "video" && (
+                                <video controls src={msg.media_url} style={{ maxWidth: "100%", borderRadius: "10px", marginTop: "5px" }} />
+                            )}
+                            {msg.media_url && msg.media_type === "audio" && (
+                                <audio controls src={msg.media_url} style={{ width: "100%", marginTop: "5px" }} />
                             )}
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "5px" }}>
                                 {msg.is_ghost_bomb && (
@@ -281,31 +255,8 @@ export default function ChatDetail() {
                     boxShadow: "0 -1px 3px rgba(0,0,0,0.1)",
                     position: "sticky",
                     bottom: 0,
-                    flexWrap: "wrap",
                 }}
             >
-                <input
-                    type="file"
-                    accept="image/jpeg,image/png,video/mp4,audio/mpeg,audio/wav"
-                    onChange={handleFileChange}
-                    ref={fileInputRef}
-                    style={{ display: "none" }}
-                />
-                <button
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{
-                        backgroundColor: "#00a884",
-                        color: "white",
-                        padding: "10px",
-                        borderRadius: "20px",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                    }}
-                    title="Attach photo, video, or audio (up to 10MB, audio max 60s)"
-                >
-                    📎
-                </button>
                 <input
                     type="text"
                     value={newMessage}
@@ -319,6 +270,12 @@ export default function ChatDetail() {
                         outline: "none",
                         fontSize: "14px",
                     }}
+                />
+                <input
+                    type="file"
+                    accept="image/jpeg,image/png,video/mp4,audio/mpeg,audio/wav"
+                    onChange={handleFileChange}
+                    style={{ fontSize: "14px" }}
                 />
                 <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px", color: "#667781" }}>
                     <input
@@ -342,12 +299,7 @@ export default function ChatDetail() {
                 >
                     Send
                 </button>
-                {selectedFile && (
-                    <div style={{ width: "100%", fontSize: "12px", color: "#667781" }}>
-                        Selected: {selectedFile.name}
-                    </div>
-                )}
             </div>
         </div>
     );
-}
+                }
