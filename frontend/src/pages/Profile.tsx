@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, ChangeEvent } from "react";
 import axios from "axios";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -11,6 +11,8 @@ interface UserProfile {
     coins: number;
     rank: string;
     level: number;
+    profile_media_url?: string;
+    profile_media_type?: string;
 }
 
 interface Post {
@@ -154,16 +156,13 @@ export default function Profile() {
             setCommentContent({ ...commentContent, [postId]: "" });
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
-            });
+                }
+            );
             setComments({ ...comments, [postId]: commentRes.data });
         } catch (err) {
             console.error("Error adding comment:", err);
             setMessage("Error adding comment: " + (err.response?.data?.message || err.message));
         }
-    };
-
-    const toggleComments = (postId: number) => {
-        setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
     };
 
     const handleStartDM = async () => {
@@ -193,6 +192,47 @@ export default function Profile() {
         }
     };
 
+    const handleUploadMedia = async (e: ChangeEvent<HTMLInputElement>) => {
+        if (!user || !token || !e.target.files || e.target.files.length === 0) {
+            setMessage("Please select a file to upload.");
+            return;
+        }
+
+        const file = e.target.files[0];
+        if (file.size > 3 * 1024 * 1024) {
+            setMessage("File size exceeds 3MB limit.");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("email", user.email);
+        formData.append("media", file);
+
+        try {
+            const response = await axios.post("/api/users/profile/upload", formData, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "multipart/form-data",
+                },
+            });
+
+            setProfile({
+                ...profile!,
+                profile_media_url: response.data.profile_media_url,
+                profile_media_type: response.data.profile_media_type,
+            });
+            setMessage("Profile media uploaded successfully!");
+            setTimeout(() => setMessage(""), 3000);
+        } catch (err) {
+            console.error("Error uploading profile media:", err);
+            setMessage("Failed to upload profile media: " + (err.response?.data?.message || err.message));
+        }
+    };
+
+    const toggleComments = (postId: number) => {
+        setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
+    };
+
     if (!user || !token) {
         return (
             <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "lightgray" }}>
@@ -215,14 +255,101 @@ export default function Profile() {
                 {profile ? (
                     <>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <h1 style={{ fontSize: "2rem", fontWeight: "bold", color: "black", marginBottom: "20px" }}>
-                                {profile.username}'s Profile{" "}
-                                {profile.verified ? (
-                                    <span style={{ display: "inline-block", backgroundColor: "black", color: "white", borderRadius: "50%", width: "20px", height: "20px", textAlign: "center", lineHeight: "20px", fontSize: "12px" }}>
-                                        ✓
-                                    </span>
-                                ) : null}
-                            </h1>
+                            <div style={{ display: "flex", alignItems: "center" }}>
+                                <div style={{ marginRight: "20px" }}>
+                                    {profile.profile_media_url && profile.profile_media_type === "image" && (
+                                        <img
+                                            src={profile.profile_media_url}
+                                            alt="Profile"
+                                            style={{
+                                                width: "100px",
+                                                height: "100px",
+                                                borderRadius: "50%",
+                                                objectFit: "cover",
+                                                border: "2px solid #333",
+                                            }}
+                                        />
+                                    )}
+                                    {profile.profile_media_url && profile.profile_media_type === "video" && (
+                                        <video
+                                            src={profile.profile_media_url}
+                                            autoPlay
+                                            loop
+                                            muted
+                                            playsInline
+                                            style={{
+                                                width: "100px",
+                                                height: "100px",
+                                                borderRadius: "50%",
+                                                objectFit: "cover",
+                                                border: "2px solid #333",
+                                            }}
+                                        />
+                                    )}
+                                    {!profile.profile_media_url && (
+                                        <div
+                                            style={{
+                                                width: "100px",
+                                                height: "100px",
+                                                borderRadius: "50%",
+                                                backgroundColor: "#e0e0e0",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: "40px",
+                                                color: "#666",
+                                                border: "2px solid #333",
+                                            }}
+                                        >
+                                            {profile.username.charAt(0).toUpperCase()}
+                                        </div>
+                                    )}
+                                    {user.username === profile.username && (
+                                        <div style={{ marginTop: "10px", textAlign: "center" }}>
+                                            <label
+                                                style={{
+                                                    background: "linear-gradient(to right, blue, darkblue)",
+                                                    color: "white",
+                                                    padding: "6px 12px",
+                                                    borderRadius: "6px",
+                                                    cursor: "pointer",
+                                                    fontSize: "14px",
+                                                    display: "inline-block",
+                                                }}
+                                            >
+                                                Upload Photo/Video
+                                                <input
+                                                    type="file"
+                                                    accept="image/jpeg,image/png,video/mp4"
+                                                    onChange={handleUploadMedia}
+                                                    style={{ display: "none" }}
+                                                />
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+                                <h1 style={{ fontSize: "2rem", fontWeight: "bold", color: "black", marginBottom: "20px" }}>
+                                    {profile.username}'s Profile{" "}
+                                    {profile.verified ? (
+                                        <span
+                                            style={{
+                                                display: "inline-block",
+                                                backgroundColor: "#000",
+                                                color: "white",
+                                                borderRadius: "50%",
+                                                width: "20px",
+                                                height: "20px",
+                                                textAlign: "center",
+                                                lineHeight: "20px",
+                                                fontSize: "12px",
+                                                animation: "shine 2s infinite",
+                                            }}
+                                        >
+                                            ✓
+                                        </span>
+                                    ) : null}
+                                </h1>
+                            </div>
                             {user.username !== profile.username && (
                                 <button
                                     onClick={handleStartDM}
@@ -331,6 +458,15 @@ export default function Profile() {
                     </p>
                 )}
             </div>
+            <style>
+                {`
+                    @keyframes shine {
+                        0% { background-color: #000; box-shadow: 0 0 5px rgba(255,255,255,0.5); }
+                        50% { background-color: #333; box-shadow: 0 0 15px rgba(255,255,255,0.8); }
+                        100% { background-color: #000; box-shadow: 0 0 5px rgba(255,255,255,0.5); }
+                    }
+                `}
+            </style>
         </div>
     );
 }
