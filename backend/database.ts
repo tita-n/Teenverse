@@ -19,7 +19,7 @@ db.on("trace", (sql) => {
 
 // Create tables if they don't exist
 db.serialize(() => {
-    // Users table
+    // Users table (added profile_media_url and profile_media_type)
     db.run(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +45,9 @@ db.serialize(() => {
             animations_enabled BOOLEAN DEFAULT 1,
             font_size TEXT DEFAULT 'medium',
             language TEXT DEFAULT 'en',
-            snitch_risk INTEGER DEFAULT 0
+            snitch_risk INTEGER DEFAULT 0,
+            profile_media_url TEXT,
+            profile_media_type TEXT
         )
     `);
 
