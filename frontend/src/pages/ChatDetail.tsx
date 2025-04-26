@@ -271,12 +271,15 @@ export default function ChatDetail() {
                         fontSize: "14px",
                     }}
                 />
-                <input
-                    type="file"
-                    accept="image/jpeg,image/png,video/mp4,audio/mpeg,audio/wav"
-                    onChange={handleFileChange}
-                    style={{ fontSize: "14px" }}
-                />
+                <label style={{ cursor: "pointer" }}>
+                    <span style={{ fontSize: "20px", color: "#667781" }}>📎</span>
+                    <input
+                        type="file"
+                        accept="image/jpeg,image/png,video/mp4,audio/mpeg,audio/wav"
+                        onChange={handleFileChange}
+                        style={{ display: "none" }}
+                    />
+                </label>
                 <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px", color: "#667781" }}>
                     <input
                         type="checkbox"
@@ -302,4 +305,4 @@ export default function ChatDetail() {
             </div>
         </div>
     );
-                }
+}
