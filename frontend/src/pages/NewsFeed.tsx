@@ -15,6 +15,10 @@ interface Post {
     created_at: string;
     user_id: number;
     verified?: number;
+    profile_media_url?: string;
+    profile_media_type?: string;
+    media_url?: string;
+    media_type?: string;
 }
 
 interface CommentType {
@@ -27,6 +31,8 @@ interface CommentType {
     pinned: number;
     replies: Reply[];
     likes: number;
+    profile_media_url?: string;
+    profile_media_type?: string;
 }
 
 interface Reply {
@@ -36,6 +42,8 @@ interface Reply {
     username: string;
     content: string;
     created_at: string;
+    profile_media_url?: string;
+    profile_media_type?: string;
 }
 
 interface Squad {
@@ -47,6 +55,7 @@ interface Squad {
 export default function NewsFeed() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [content, setContent] = useState("");
+    const [media, setMedia] = useState<File | null>(null);
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
@@ -81,6 +90,20 @@ export default function NewsFeed() {
     const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
     const commentsPerPage = 3;
 
+    // Handle media file selection
+    const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file size (10MB = 10 * 1024 * 1024 bytes)
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                setMessage("Media file size exceeds 10MB limit");
+                return;
+            }
+            setMedia(file);
+        }
+    };
+
     // Fetch posts with duplicate prevention
     const fetchPosts = useCallback(async () => {
         if (!user || !token || !hasMore) return;
@@ -93,6 +116,10 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
+                profile_media_url: post.profile_media_url,
+                profile_media_type: post.profile_media_type,
+                media_url: post.media_url,
+                media_type: post.media_type,
             }));
 
             setPosts((prev) => {
@@ -148,6 +175,17 @@ export default function NewsFeed() {
             return;
         }
         try {
+            let mediaData: { file: string; type: string } | undefined;
+            if (media) {
+                // Convert file to base64 for sending
+                const reader = new FileReader();
+                const fileData = await new Promise<string>((resolve) => {
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.readAsDataURL(media);
+                });
+                mediaData = { file: fileData, type: media.type };
+            }
+
             // Create the new post
             const res = await axios.post(
                 "/api/create-post",
@@ -155,6 +193,7 @@ export default function NewsFeed() {
                     email: user.email,
                     content,
                     mode: "main",
+                    media: mediaData,
                 },
                 {
                     headers: { Authorization: `Bearer ${token}` },
@@ -162,6 +201,7 @@ export default function NewsFeed() {
             );
             setMessage(res.data.message);
             setContent("");
+            setMedia(null);
 
             // Fetch the latest posts to include the new one
             const newPostsRes = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, {
@@ -171,6 +211,10 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
+                profile_media_url: post.profile_media_url,
+                profile_media_type: post.profile_media_type,
+                media_url: post.media_url,
+                media_type: post.media_type,
             }));
 
             // Replace the posts array with the latest data
@@ -323,6 +367,10 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
+                profile_media_url: post.profile_media_url,
+                profile_media_type: post.profile_media_type,
+                media_url: post.media_url,
+                media_type: post.media_type,
             }));
             setPosts(postsData);
         } catch (err) {
@@ -464,6 +512,12 @@ export default function NewsFeed() {
                             placeholder="What's on your mind?"
                             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
                         />
+                        <input
+                            type="file"
+                            accept="image/*,video/*"
+                            onChange={handleMediaChange}
+                            className="mb-4"
+                        />
                         <button
                             onClick={postUpdate}
                             className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
@@ -482,11 +536,28 @@ export default function NewsFeed() {
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                            <Link to={`/profile/${post.username}`}>
+                                            <Link to={`/profile/${post.username}`} className="flex items-center">
+                                                {post.profile_media_url && (
+                                                    post.profile_media_type === "video" ? (
+                                                        <video
+                                                            src={post.profile_media_url}
+                                                            autoPlay
+                                                            muted
+                                                            loop
+                                                            className="w-6 h-6 rounded-full object-cover mr-2"
+                                                        />
+                                                    ) : (
+                                                        <img
+                                                            src={post.profile_media_url}
+                                                            alt="Profile"
+                                                            className="w-6 h-6 rounded-full object-cover mr-2"
+                                                        />
+                                                    )
+                                                )}
                                                 <p className="font-semibold text-gray-800 inline">
                                                     {post.username}{" "}
                                                     {post.verified ? (
-                                                        <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                                        <span className="inline-block bg-blue-500 text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
                                                             ✓
                                                         </span>
                                                     ) : null}
@@ -517,176 +588,26 @@ export default function NewsFeed() {
                                             ) : (
                                                 <>
                                                     <p className="text-gray-700 whitespace-pre-wrap mt-1">{post.content}</p>
+                                                    {post.media_url && (
+                                                        <div className="mt-2">
+                                                            {post.media_type === "video" ? (
+                                                                <video
+                                                                    src={post.media_url}
+                                                                    controls
+                                                                    className="max-w-full h-auto rounded-lg"
+                                                                />
+                                                            ) : (
+                                                                <img
+                                                                    src={post.media_url}
+                                                                    alt="Post media"
+                                                                    className="max-w-full h-auto rounded-lg"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    )}
                                                     <p className="text-gray-500 text-sm mt-1">
                                                         {new Date(post.created_at).toLocaleString()}
                                                     </p>
                                                 </>
                                             )}
                                         </div>
-                                        {post.user_id === user.id && (
-                                            <div className="relative">
-                                                <button
-                                                    onClick={() =>
-                                                        setShowMenu(post.id === showMenu ? null : post.id)
-                                                    }
-                                                    className="text-gray-600 hover:text-gray-800 text-sm"
-                                                >
-                                                    ...
-                                                </button>
-                                                {showMenu === post.id && (
-                                                    <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow-lg p-2 z-10">
-                                                        <button
-                                                            onClick={() => startEditing(post)}
-                                                            className="block text-gray-800 px-2 py-1 hover:bg-gray-100"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(post.id)}
-                                                            className="block text-red-600 px-2 py-1 hover:bg-gray-100"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center justify-between mt-3 border-t pt-2">
-                                        <div className="flex items-center space-x-2">
-                                            <button
-                                                onClick={() => handleLike(post.id)}
-                                                className="text-blue-600 hover:text-blue-800 flex items-center"
-                                            >
-                                                👍 {post.likes || 0}
-                                            </button>
-                                            <div className="relative">
-                                                <button
-                                                    onClick={() =>
-                                                        setShowReactions(post.id === showReactions ? null : post.id)
-                                                    }
-                                                    className="text-yellow-600 hover:text-yellow-800 flex items-center"
-                                                >
-                                                    😊 React
-                                                </button>
-                                                {showReactions === post.id && (
-                                                    <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg p-2 flex space-x-1 z-10">
-                                                        {reactionsList.map((reaction) => (
-                                                            <button
-                                                                key={reaction}
-                                                                onClick={() => handleReact(post.id, reaction)}
-                                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 transition"
-                                                            >
-                                                                {reaction}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center space-x-1">
-                                                {Object.entries(post.reactions).map(
-                                                    ([reaction, users]: [string, string[]]) =>
-                                                        users.length > 0 && (
-                                                            <span key={reaction} className="text-sm text-gray-600">
-                                                                {reaction}: {users.length}
-                                                            </span>
-                                                        )
-                                                )}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => toggleComments(post.id)}
-                                            className="text-indigo-600 hover:text-indigo-800 text-sm"
-                                        >
-                                            {showComments[post.id]
-                                                ? "Hide comments"
-                                                : `View comments (${comments[post.id]?.length || 0})`}
-                                        </button>
-                                    </div>
-
-                                    {showComments[post.id] && (
-                                        <div className="mt-4">
-                                            {comments[post.id]?.length > 0 ? (
-                                                <>
-                                                    {comments[post.id]
-                                                        .sort((a, b) => b.pinned - a.pinned)
-                                                        .slice(0, visibleComments[post.id])
-                                                        .map((comment) => (
-                                                            <Comment
-                                                                key={comment.id}
-                                                                comment={comment}
-                                                                postId={post.id}
-                                                                user={user}
-                                                                token={token}
-                                                                onCommentLike={handleCommentLike}
-                                                                onPinComment={handlePinComment}
-                                                                onReply={handleReply}
-                                                            />
-                                                        ))}
-                                                    {comments[post.id].length > visibleComments[post.id] && (
-                                                        <button
-                                                            onClick={() => loadMoreComments(post.id)}
-                                                            className="text-indigo-600 hover:text-indigo-800 text-sm mt-2"
-                                                        >
-                                                            View more comments
-                                                        </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <p className="text-gray-600 text-sm">No comments yet.</p>
-                                            )}
-
-                                            <div className="mt-4">
-                                                <textarea
-                                                    value={commentContent[post.id] || ""}
-                                                    onChange={(e) =>
-                                                        setCommentContent({
-                                                            ...commentContent,
-                                                            [post.id]: e.target.value,
-                                                        })
-                                                    }
-                                                    placeholder="Add a comment..."
-                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                />
-                                                <button
-                                                    onClick={() => handleComment(post.id)}
-                                                    className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
-                                                >
-                                                    Comment
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="mt-3">
-                                        <select
-                                            onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
-                                            className="border rounded-lg p-1 text-sm text-gray-600"
-                                            defaultValue=""
-                                        >
-                                            <option value="" disabled>
-                                                Share to Squad
-                                            </option>
-                                            {squads.map((squad) => (
-                                                <option key={squad.id} value={squad.id}>
-                                                    {squad.game_name} - {squad.description}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <p className="text-gray-600 text-center">No posts yet.</p>
-                        )}
-                        {loading && <p className="text-center text-gray-600">Loading...</p>}
-                        {!hasMore && posts.length > 0 && (
-                            <p className="text-center text-gray-600">No more posts to load.</p>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
