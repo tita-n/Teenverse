@@ -61,8 +61,8 @@ export default function Navigation() {
                                     Control Panel
                                 </Link>
                             )}
-                            <Link to="/settings" className="text-white hover:text-indigo-200">
-                                Settings
+                            <Link to="/chats" className="text-white hover:text-indigo-200">
+                                Chats
                             </Link>
                             <button
                                 onClick={handleLogout}
@@ -199,11 +199,11 @@ export default function Navigation() {
                                     </Link>
                                 )}
                                 <Link
-                                    to="/settings"
+                                    to="/chats"
                                     className="text-white hover:text-indigo-200 px-3 py-1"
                                     onClick={() => setIsOpen(false)}
                                 >
-                                    Settings
+                                    Chats
                                 </Link>
                                 <button
                                     onClick={handleLogout}
