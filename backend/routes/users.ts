@@ -1,10 +1,8 @@
 import express from "express";
 import { db } from "../database";
+import multer from "multer";
+import cloudinary from "cloudinary";
 
-// Import calculateLevel from server.ts (uncomment if you export it from server.ts)
-// import { calculateLevel } from "../server";
-
-// If you prefer not to import, define calculateLevel here (copied from server.ts)
 function calculateLevel(xp: number): { level: number; rank: string } {
     let level = Math.floor(xp / 10) + 1;
     if (level > 100) level = 100;
@@ -19,16 +17,30 @@ function calculateLevel(xp: number): { level: number; rank: string } {
     return { level, rank };
 }
 
+// Configure Multer for profile media uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage,
+    limits: { fileSize: 3 * 1024 * 1024 }, // 3MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ["image/jpeg", "image/png", "video/mp4"];
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Invalid file type. Only JPEG, PNG, and MP4 are allowed."));
+        }
+    },
+});
+
 const router = express.Router();
 
-// Get user profile by username (updated to include coins, rank, and level)
+// Get user profile by username
 router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
     const username = req.params.username;
     try {
-        // Fetch user data including coins and xp for rank/level calculation
         const user: any = await new Promise<any>((resolve, reject) => {
             db.get(
-                "SELECT id, username, verified, coins, xp FROM users WHERE username = ?",
+                "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
                 [username],
                 (err, row) => {
                     if (err) reject(err);
@@ -38,7 +50,6 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
         });
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        // Fetch user posts
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
                 "SELECT * FROM posts WHERE user_id = (SELECT id FROM users WHERE username = ?) ORDER BY created_at DESC",
@@ -50,16 +61,16 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
             );
         });
 
-        // Calculate level and rank using the user's XP
         const { level, rank } = calculateLevel(user.xp);
 
-        // Construct the updated user object with requested fields
         const userProfile = {
             username: user.username,
             verified: user.verified,
             coins: user.coins,
             rank,
-            level
+            level,
+            profile_media_url: user.profile_media_url,
+            profile_media_type: user.profile_media_type,
         };
 
         res.json({ user: userProfile, posts });
@@ -69,7 +80,64 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
     }
 });
 
-// Verify/unverify a user (creator only) - unchanged
+// Upload profile photo/video
+router.post("/profile/upload", upload.single("media"), async (req: express.Request, res: express.Response) => {
+    const { email } = req.body;
+    const file = req.file;
+
+    if (!email || !file) {
+        return res.status(400).json({ message: "Email and media file are required" });
+    }
+    if (!req.user || req.user.email !== email) {
+        return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    try {
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                if (!row) reject(new Error("User not found"));
+                resolve(row);
+            });
+        });
+
+        const uploadResult = await new Promise<cloudinary.UploadApiResponse>((resolve, reject) => {
+            const stream = cloudinary.v2.uploader.upload_stream(
+                {
+                    resource_type: file.mimetype.startsWith("image") ? "image" : "video",
+                    transformation: [{ quality: "auto:low", fetch_format: "auto" }],
+                },
+                (error, result) => {
+                    if (error) reject(error);
+                    if (!result) reject(new Error("Upload failed"));
+                    resolve(result);
+                }
+            );
+            stream.end(file.buffer);
+        });
+
+        const mediaUrl = uploadResult.secure_url;
+        const mediaType = file.mimetype.startsWith("image") ? "image" : "video";
+
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "UPDATE users SET profile_media_url = ?, profile_media_type = ? WHERE id = ?",
+                [mediaUrl, mediaType, user.id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.json({ message: "Profile media uploaded successfully", profile_media_url: mediaUrl, profile_media_type: mediaType });
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Error uploading profile media:`, err);
+        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+    }
+});
+
+// Verify/unverify a user (creator only)
 router.post("/verify", async (req: express.Request, res: express.Response) => {
     const { username, verify } = req.body;
     if (!req.user) {
