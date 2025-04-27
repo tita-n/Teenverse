@@ -61,6 +61,8 @@ db.serialize(() => {
             mode TEXT DEFAULT 'main',
             likes INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            media_url TEXT,
+            media_type TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
