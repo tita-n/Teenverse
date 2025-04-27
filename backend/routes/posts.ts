@@ -1,8 +1,7 @@
 import express from "express";
 import { db } from "../database";
 import cloudinary from "cloudinary";
-
-const router = express.Router();
+import multer from "multer";
 
 // Configure Cloudinary
 cloudinary.v2.config({
@@ -11,10 +10,18 @@ cloudinary.v2.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// Configure Multer for file uploads
+const upload = multer({
+    storage: multer.memoryStorage(), // Store file in memory for Cloudinary upload
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
+
+const router = express.Router();
+
 // Get all posts (for Dashboard, exclude rants) with pagination
 router.get("/", async (req: express.Request, res: express.Response) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 10; // Default to 10 posts per page
+        const limit = parseInt(req.query.limit as string) || 10;
         const offset = parseInt(req.query.offset as string) || 0;
 
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
@@ -36,7 +43,7 @@ router.get("/", async (req: express.Request, res: express.Response) => {
 // Get news feed posts (include all posts) with pagination
 router.get("/newsfeed", async (req: express.Request, res: express.Response) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 10; // Default to 10 posts per page
+        const limit = parseInt(req.query.limit as string) || 10;
         const offset = parseInt(req.query.offset as string) || 0;
 
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
@@ -56,17 +63,20 @@ router.get("/newsfeed", async (req: express.Request, res: express.Response) => {
 });
 
 // Create a new post
-router.post("/create-post", async (req: express.Request, res: express.Response) => {
-    const { email, content, mode, media } = req.body;
+router.post("/create-post", upload.single("media"), async (req: express.Request, res: express.Response) => {
+    const { email, content, mode } = req.body;
+    const mediaFile = req.file; // Binary file from FormData
+
     if (!email || !content || !mode) {
         return res.status(400).json({ message: "Email, content, and mode are required" });
     }
     if (!req.user || req.user.email !== email) {
         return res.status(403).json({ message: "Unauthorized" });
     }
+
     try {
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+            db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -76,35 +86,44 @@ router.post("/create-post", async (req: express.Request, res: express.Response) 
         let mediaUrl: string | null = null;
         let mediaType: string | null = null;
 
-        if (media) {
-            const { file, type } = media;
-            // Validate file size (10MB = 10 * 1024 * 1024 bytes)
-            const maxSize = 10 * 1024 * 1024;
-            if (file.size > maxSize) {
-                return res.status(400).json({ message: "Media file size exceeds 10MB limit" });
-            }
+        if (mediaFile) {
+            // Generate unique public_id without uuid
+            const uniqueId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-            // Upload to Cloudinary
-            const uploadResult = await cloudinary.v2.uploader.upload(file, {
-                resource_type: type.startsWith("video") ? "video" : "image",
-                folder: "posts",
+            // Upload to Cloudinary directly from buffer
+            const uploadResult = await new Promise((resolve, reject) => {
+                const stream = cloudinary.v2.uploader.upload_stream(
+                    {
+                        resource_type: mediaFile.mimetype.startsWith("video") ? "video" : "image",
+                        folder: "posts",
+                        public_id: uniqueId,
+                    },
+                    (error, result) => {
+                        if (error) reject(error);
+                        resolve(result);
+                    }
+                );
+                stream.end(mediaFile.buffer);
             });
+
             mediaUrl = uploadResult.secure_url;
-            mediaType = type.startsWith("video") ? "video" : "image";
+            mediaType = mediaFile.mimetype.startsWith("video") ? "video" : "image";
         }
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO posts (user_id, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?)",
-                [user.id, content, mode, new Date().toISOString(), mediaUrl, mediaType],
+                "INSERT INTO posts (user_id, username, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [user.id, user.username, content, mode, new Date().toISOString(), mediaUrl, mediaType],
                 (err) => {
                     if (err) reject(err);
                     resolve();
                 }
             );
         });
+
         res.json({ message: "Post created successfully" });
     } catch (err) {
+        console.error("Error creating post:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -140,14 +159,10 @@ router.put("/edit/:postId", async (req: express.Request, res: express.Response) 
         }
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE posts SET content = ? WHERE id = ?",
-                [content, postId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE posts SET content = ? WHERE id = ?", [content, postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
         res.json({ message: "Post updated successfully" });
     } catch (err) {
@@ -216,14 +231,10 @@ router.post("/like", async (req: express.Request, res: express.Response) => {
         if (!user) return res.status(404).json({ message: "User not found" });
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE posts SET likes = likes + 1 WHERE id = ?",
-                [postId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
         res.json({ message: "Post liked successfully" });
     } catch (err) {
@@ -264,14 +275,10 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
         }
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE posts SET reactions = ? WHERE id = ?",
-                [JSON.stringify(reactions), postId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE posts SET reactions = ? WHERE id = ?", [JSON.stringify(reactions), postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
         res.json({ message: "Reaction added successfully" });
     } catch (err) {
@@ -374,7 +381,6 @@ router.post("/comments", async (req: express.Request, res: express.Response) => 
         });
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        // Validate postId exists
         const post: any = await new Promise<any>((resolve, reject) => {
             db.get("SELECT id FROM posts WHERE id = ?", [parseInt(postId)], (err, row) => {
                 if (err) reject(err);
@@ -395,7 +401,7 @@ router.post("/comments", async (req: express.Request, res: express.Response) => 
         });
         res.json({ message: "Comment added successfully" });
     } catch (err) {
-        console.error("Error adding comment:", err); // Log the error for debugging
+        console.error("Error adding comment:", err);
         res.status(500).json({ message: "Internal server error: " + err.message });
     }
 });
@@ -453,14 +459,10 @@ router.post("/comments/like", async (req: express.Request, res: express.Response
         if (!user) return res.status(404).json({ message: "User not found" });
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE comments SET likes = likes + 1 WHERE id = ?",
-                [commentId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE comments SET likes = likes + 1 WHERE id = ?", [commentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
         res.json({ message: "Comment liked successfully" });
     } catch (err) {
@@ -497,28 +499,18 @@ router.post("/comments/pin", async (req: express.Request, res: express.Response)
             return res.status(403).json({ message: "Unauthorized: You can only pin comments on your own posts" });
         }
 
-        // Unpin any existing pinned comments for this post
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE comments SET pinned = 0 WHERE post_id = ?",
-                [postId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE comments SET pinned = 0 WHERE post_id = ?", [postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
 
-        // Pin the selected comment
         await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE comments SET pinned = 1 WHERE id = ?",
-                [commentId],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
+            db.run("UPDATE comments SET pinned = 1 WHERE id = ?", [commentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
         });
         res.json({ message: "Comment pinned successfully" });
     } catch (err) {
