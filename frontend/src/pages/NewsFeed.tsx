@@ -15,10 +15,6 @@ interface Post {
     created_at: string;
     user_id: number;
     verified?: number;
-    profile_media_url?: string;
-    profile_media_type?: string;
-    media_url?: string;
-    media_type?: string;
 }
 
 interface CommentType {
@@ -31,8 +27,6 @@ interface CommentType {
     pinned: number;
     replies: Reply[];
     likes: number;
-    profile_media_url?: string;
-    profile_media_type?: string;
 }
 
 interface Reply {
@@ -42,8 +36,6 @@ interface Reply {
     username: string;
     content: string;
     created_at: string;
-    profile_media_url?: string;
-    profile_media_type?: string;
 }
 
 interface Squad {
@@ -55,13 +47,11 @@ interface Squad {
 export default function NewsFeed() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [content, setContent] = useState("");
-    const [media, setMedia] = useState<File | null>(null);
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const limit = 10;
+    const limit = 10; // Matches backend default
     const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
     const [showComments, setShowComments] = useState<{ [postId: number]: boolean }>({});
@@ -72,7 +62,6 @@ export default function NewsFeed() {
     const [squads, setSquads] = useState<Squad[]>([]);
     const [showMenu, setShowMenu] = useState<number | null>(null);
     const { user, token } = useAuth();
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const observer = useRef<IntersectionObserver | null>(null);
     const lastPostElementRef = useCallback(
@@ -92,22 +81,7 @@ export default function NewsFeed() {
     const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
     const commentsPerPage = 3;
 
-    const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const maxSize = 10 * 1024 * 1024;
-            if (file.size > maxSize) {
-                setMessage("Media file size exceeds 10MB limit");
-                return;
-            }
-            setMedia(file);
-        }
-    };
-
-    const triggerFileInput = () => {
-        fileInputRef.current?.click();
-    };
-
+    // Fetch posts with duplicate prevention
     const fetchPosts = useCallback(async () => {
         if (!user || !token || !hasMore) return;
         try {
@@ -119,10 +93,6 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
-                profile_media_url: post.profile_media_url,
-                profile_media_type: post.profile_media_type,
-                media_url: post.media_url,
-                media_type: post.media_type,
             }));
 
             setPosts((prev) => {
@@ -132,6 +102,7 @@ export default function NewsFeed() {
             });
             setHasMore(postsData.length === limit);
 
+            // Fetch comments for new posts
             const newComments: { [postId: number]: CommentType[] } = { ...comments };
             for (const post of postsData) {
                 if (!newComments[post.id]) {
@@ -177,32 +148,22 @@ export default function NewsFeed() {
             return;
         }
         try {
-            setUploadProgress(0);
-            const formData = new FormData();
-            formData.append("email", user.email);
-            formData.append("content", content);
-            formData.append("mode", "main");
-            if (media) {
-                formData.append("media", media);
-            }
-
-            const res = await axios.post("/api/create-post", formData, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "multipart/form-data",
+            // Create the new post
+            const res = await axios.post(
+                "/api/create-post",
+                {
+                    email: user.email,
+                    content,
+                    mode: "main",
                 },
-                onUploadProgress: (progressEvent) => {
-                    if (progressEvent.total) {
-                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                        setUploadProgress(percentCompleted);
-                    }
-                },
-            });
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             setMessage(res.data.message);
             setContent("");
-            setMedia(null);
-            setUploadProgress(0);
 
+            // Fetch the latest posts to include the new one
             const newPostsRes = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -210,16 +171,14 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
-                profile_media_url: post.profile_media_url,
-                profile_media_type: post.profile_media_type,
-                media_url: post.media_url,
-                media_type: post.media_type,
             }));
 
+            // Replace the posts array with the latest data
             setPosts(newPostsData);
-            setOffset(0);
+            setOffset(0); // Reset offset for future fetches
             setHasMore(newPostsData.length === limit);
 
+            // Fetch comments for the new posts
             const newComments: { [postId: number]: CommentType[] } = { ...comments };
             for (const post of newPostsData) {
                 if (!newComments[post.id]) {
@@ -233,7 +192,6 @@ export default function NewsFeed() {
             setComments(newComments);
         } catch (err) {
             setMessage("Error posting: " + (err.response?.data?.message || err.message));
-            setUploadProgress(0);
         }
     };
 
@@ -365,10 +323,6 @@ export default function NewsFeed() {
                 ...post,
                 reactions: post.reactions ? JSON.parse(post.reactions) : {},
                 verified: post.verified,
-                profile_media_url: post.profile_media_url,
-                profile_media_type: post.profile_media_type,
-                media_url: post.media_url,
-                media_type: post.media_type,
             }));
             setPosts(postsData);
         } catch (err) {
@@ -510,48 +464,9 @@ export default function NewsFeed() {
                             placeholder="What's on your mind?"
                             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
                         />
-                        <div className="flex items-center space-x-2 mb-4">
-                            <button
-                                onClick={triggerFileInput}
-                                className="text-gray-600 hover:text-gray-800"
-                                title="Attach media"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-6 w-6"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.586-6.586a4 4 0 00-5.656-5.656l-6.586 6.586a6 6 0 108.486 8.486L20.414 9"
-                                    />
-                                </svg>
-                            </button>
-                            <input
-                                type="file"
-                                accept="image/*,video/*"
-                                onChange={handleMediaChange}
-                                className="hidden"
-                                ref={fileInputRef}
-                            />
-                            {media && <span className="text-sm text-gray-600">{media.name}</span>}
-                        </div>
-                        {uploadProgress > 0 && uploadProgress < 100 && (
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
-                                <div
-                                    className="bg-indigo-600 h-2.5 rounded-full"
-                                    style={{ width: `${uploadProgress}%` }}
-                                ></div>
-                            </div>
-                        )}
                         <button
                             onClick={postUpdate}
                             className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
-                            disabled={uploadProgress > 0 && uploadProgress < 100}
                         >
                             Post
                         </button>
@@ -567,24 +482,7 @@ export default function NewsFeed() {
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                            <Link to={`/profile/${post.username}`} className="flex items-center">
-                                                {post.profile_media_url && (
-                                                    post.profile_media_type === "video" ? (
-                                                        <video
-                                                            src={post.profile_media_url}
-                                                            autoPlay
-                                                            muted
-                                                            loop
-                                                            className="w-6 h-6 rounded-full object-cover mr-2"
-                                                        />
-                                                    ) : (
-                                                        <img
-                                                            src={post.profile_media_url}
-                                                            alt="Profile"
-                                                            className="w-6 h-6 rounded-full object-cover mr-2"
-                                                        />
-                                                    )
-                                                )}
+                                            <Link to={`/profile/${post.username}`}>
                                                 <p className="font-semibold text-gray-800 inline">
                                                     {post.username}{" "}
                                                     {post.verified ? (
@@ -619,23 +517,6 @@ export default function NewsFeed() {
                                             ) : (
                                                 <>
                                                     <p className="text-gray-700 whitespace-pre-wrap mt-1">{post.content}</p>
-                                                    {post.media_url && (
-                                                        <div className="mt-2">
-                                                            {post.media_type === "video" ? (
-                                                                <video
-                                                                    src={post.media_url}
-                                                                    controls
-                                                                    className="max-w-full h-auto rounded-lg"
-                                                                />
-                                                            ) : (
-                                                                <img
-                                                                    src={post.media_url}
-                                                                    alt="Post media"
-                                                                    className="max-w-full h-auto rounded-lg"
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    )}
                                                     <p className="text-gray-500 text-sm mt-1">
                                                         {new Date(post.created_at).toLocaleString()}
                                                     </p>
@@ -808,4 +689,4 @@ export default function NewsFeed() {
             </div>
         </div>
     );
-        }
+                     }
