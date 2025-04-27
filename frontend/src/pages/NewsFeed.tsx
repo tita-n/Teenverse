@@ -60,6 +60,7 @@ export default function NewsFeed() {
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
+    const [uploadProgress, setUploadProgress] = useState(0); // Progress bar state
     const limit = 10; // Matches backend default
     const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
@@ -71,6 +72,7 @@ export default function NewsFeed() {
     const [squads, setSquads] = useState<Squad[]>([]);
     const [showMenu, setShowMenu] = useState<number | null>(null);
     const { user, token } = useAuth();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const observer = useRef<IntersectionObserver | null>(null);
     const lastPostElementRef = useCallback(
@@ -102,6 +104,11 @@ export default function NewsFeed() {
             }
             setMedia(file);
         }
+    };
+
+    // Trigger file input click when paperclip icon is clicked
+    const triggerFileInput = () => {
+        fileInputRef.current?.click();
     };
 
     // Fetch posts with duplicate prevention
@@ -175,6 +182,7 @@ export default function NewsFeed() {
             return;
         }
         try {
+            setUploadProgress(0); // Reset progress
             let mediaData: { file: string; type: string } | undefined;
             if (media) {
                 // Convert file to base64 for sending
@@ -186,7 +194,7 @@ export default function NewsFeed() {
                 mediaData = { file: fileData, type: media.type };
             }
 
-            // Create the new post
+            // Create the new post with progress tracking
             const res = await axios.post(
                 "/api/create-post",
                 {
@@ -197,11 +205,18 @@ export default function NewsFeed() {
                 },
                 {
                     headers: { Authorization: `Bearer ${token}` },
+                    onUploadProgress: (progressEvent) => {
+                        if (progressEvent.total) {
+                            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                            setUploadProgress(percentCompleted);
+                        }
+                    },
                 }
             );
             setMessage(res.data.message);
             setContent("");
             setMedia(null);
+            setUploadProgress(0); // Reset progress after completion
 
             // Fetch the latest posts to include the new one
             const newPostsRes = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, {
@@ -236,6 +251,7 @@ export default function NewsFeed() {
             setComments(newComments);
         } catch (err) {
             setMessage("Error posting: " + (err.response?.data?.message || err.message));
+            setUploadProgress(0); // Reset progress on error
         }
     };
 
@@ -512,15 +528,48 @@ export default function NewsFeed() {
                             placeholder="What's on your mind?"
                             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
                         />
-                        <input
-                            type="file"
-                            accept="image/*,video/*"
-                            onChange={handleMediaChange}
-                            className="mb-4"
-                        />
+                        <div className="flex items-center space-x-2 mb-4">
+                            <button
+                                onClick={triggerFileInput}
+                                className="text-gray-600 hover:text-gray-800"
+                                title="Attach media"
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-6 w-6"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.586-6.586a4 4 0 00-5.656-5.656l-6.586 6.586a6 6 0 108.486 8.486L20.414 9"
+                                    />
+                                </svg>
+                            </button>
+                            <input
+                                type="file"
+                                accept="image/*,video/*"
+                                onChange={handleMediaChange}
+                                className="hidden"
+                                ref={fileInputRef}
+                            />
+                            {media && <span className="text-sm text-gray-600">{media.name}</span>}
+                        </div>
+                        {uploadProgress > 0 && uploadProgress < 100 && (
+                            <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                                <div
+                                    className="bg-indigo-600 h-2.5 rounded-full"
+                                    style={{ width: `${uploadProgress}%` }}
+                                ></div>
+                            </div>
+                        )}
                         <button
                             onClick={postUpdate}
                             className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
+                            disabled={uploadProgress > 0 && uploadProgress < 100}
                         >
                             Post
                         </button>
@@ -557,7 +606,7 @@ export default function NewsFeed() {
                                                 <p className="font-semibold text-gray-800 inline">
                                                     {post.username}{" "}
                                                     {post.verified ? (
-                                                        <span className="inline-block bg-blue-500 text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                                        <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
                                                             ✓
                                                         </span>
                                                     ) : null}
@@ -611,3 +660,170 @@ export default function NewsFeed() {
                                                 </>
                                             )}
                                         </div>
+                                        {post.user_id === user.id && (
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() =>
+                                                        setShowMenu(post.id === showMenu ? null : post.id)
+                                                    }
+                                                    className="text-gray-600 hover:text-gray-800 text-sm"
+                                                >
+                                                    ...
+                                                </button>
+                                                {showMenu === post.id && (
+                                                    <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow-lg p-2 z-10">
+                                                        <button
+                                                            onClick={() => startEditing(post)}
+                                                            className="block text-gray-800 px-2 py-1 hover:bg-gray-100"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(post.id)}
+                                                            className="block text-red-600 px-2 py-1 hover:bg-gray-100"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center justify-between mt-3 border-t pt-2">
+                                        <div className="flex items-center space-x-2">
+                                            <button
+                                                onClick={() => handleLike(post.id)}
+                                                className="text-blue-600 hover:text-blue-800 flex items-center"
+                                            >
+                                                👍 {post.likes || 0}
+                                            </button>
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() =>
+                                                        setShowReactions(post.id === showReactions ? null : post.id)
+                                                    }
+                                                    className="text-yellow-600 hover:text-yellow-800 flex items-center"
+                                                >
+                                                    😊 React
+                                                </button>
+                                                {showReactions === post.id && (
+                                                    <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg p-2 flex space-x-1 z-10">
+                                                        {reactionsList.map((reaction) => (
+                                                            <button
+                                                                key={reaction}
+                                                                onClick={() => handleReact(post.id, reaction)}
+                                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 transition"
+                                                            >
+                                                                {reaction}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                {Object.entries(post.reactions).map(
+                                                    ([reaction, users]: [string, string[]]) =>
+                                                        users.length > 0 && (
+                                                            <span key={reaction} className="text-sm text-gray-600">
+                                                                {reaction}: {users.length}
+                                                            </span>
+                                                        )
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => toggleComments(post.id)}
+                                            className="text-indigo-600 hover:text-indigo-800 text-sm"
+                                        >
+                                            {showComments[post.id]
+                                                ? "Hide comments"
+                                                : `View comments (${comments[post.id]?.length || 0})`}
+                                        </button>
+                                    </div>
+
+                                    {showComments[post.id] && (
+                                        <div className="mt-4">
+                                            {comments[post.id]?.length > 0 ? (
+                                                <>
+                                                    {comments[post.id]
+                                                        .sort((a, b) => b.pinned - a.pinned)
+                                                        .slice(0, visibleComments[post.id])
+                                                        .map((comment) => (
+                                                            <Comment
+                                                                key={comment.id}
+                                                                comment={comment}
+                                                                postId={post.id}
+                                                                user={user}
+                                                                token={token}
+                                                                onCommentLike={handleCommentLike}
+                                                                onPinComment={handlePinComment}
+                                                                onReply={handleReply}
+                                                            />
+                                                        ))}
+                                                    {comments[post.id].length > visibleComments[post.id] && (
+                                                        <button
+                                                            onClick={() => loadMoreComments(post.id)}
+                                                            className="text-indigo-600 hover:text-indigo-800 text-sm mt-2"
+                                                        >
+                                                            View more comments
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="text-gray-600 text-sm">No comments yet.</p>
+                                            )}
+
+                                            <div className="mt-4">
+                                                <textarea
+                                                    value={commentContent[post.id] || ""}
+                                                    onChange={(e) =>
+                                                        setCommentContent({
+                                                            ...commentContent,
+                                                            [post.id]: e.target.value,
+                                                        })
+                                                    }
+                                                    placeholder="Add a comment..."
+                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                />
+                                                <button
+                                                    onClick={() => handleComment(post.id)}
+                                                    className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
+                                                >
+                                                    Comment
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-3">
+                                        <select
+                                            onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
+                                            className="border rounded-lg p-1 text-sm text-gray-600"
+                                            defaultValue=""
+                                        >
+                                            <option value="" disabled>
+                                                Share to Squad
+                                            </option>
+                                            {squads.map((squad) => (
+                                                <option key={squad.id} value={squad.id}>
+                                                    {squad.game_name} - {squad.description}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-gray-600 text-center">No posts yet.</p>
+                        )}
+                        {loading && <p className="text-center text-gray-600">Loading...</p>}
+                        {!hasMore && posts.length > 0 && (
+                            <p className="text-center text-gray-600">No more posts to load.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+        }
