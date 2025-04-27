@@ -2,6 +2,7 @@ import express from "express";
 import { db } from "../database";
 import cloudinary from "cloudinary";
 import multer from "multer";
+import { UploadApiResponse, UploadApiErrorResponse } from "cloudinary";
 
 // Configure Cloudinary
 cloudinary.v2.config({
@@ -91,16 +92,16 @@ router.post("/create-post", upload.single("media"), async (req: express.Request,
             const uniqueId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
             // Upload to Cloudinary directly from buffer
-            const uploadResult = await new Promise((resolve, reject) => {
+            const uploadResult = await new Promise<UploadApiResponse>((resolve, reject) => {
                 const stream = cloudinary.v2.uploader.upload_stream(
                     {
                         resource_type: mediaFile.mimetype.startsWith("video") ? "video" : "image",
                         folder: "posts",
                         public_id: uniqueId,
                     },
-                    (error, result) => {
+                    (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
                         if (error) reject(error);
-                        resolve(result);
+                        resolve(result!);
                     }
                 );
                 stream.end(mediaFile.buffer);
