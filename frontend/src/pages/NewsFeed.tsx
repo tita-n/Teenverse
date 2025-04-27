@@ -60,8 +60,8 @@ export default function NewsFeed() {
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
-    const [uploadProgress, setUploadProgress] = useState(0); // Progress bar state
-    const limit = 10; // Matches backend default
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const limit = 10;
     const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
     const [showComments, setShowComments] = useState<{ [postId: number]: boolean }>({});
@@ -92,11 +92,9 @@ export default function NewsFeed() {
     const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
     const commentsPerPage = 3;
 
-    // Handle media file selection
     const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            // Validate file size (10MB = 10 * 1024 * 1024 bytes)
             const maxSize = 10 * 1024 * 1024;
             if (file.size > maxSize) {
                 setMessage("Media file size exceeds 10MB limit");
@@ -106,12 +104,10 @@ export default function NewsFeed() {
         }
     };
 
-    // Trigger file input click when paperclip icon is clicked
     const triggerFileInput = () => {
         fileInputRef.current?.click();
     };
 
-    // Fetch posts with duplicate prevention
     const fetchPosts = useCallback(async () => {
         if (!user || !token || !hasMore) return;
         try {
@@ -136,7 +132,6 @@ export default function NewsFeed() {
             });
             setHasMore(postsData.length === limit);
 
-            // Fetch comments for new posts
             const newComments: { [postId: number]: CommentType[] } = { ...comments };
             for (const post of postsData) {
                 if (!newComments[post.id]) {
@@ -182,43 +177,32 @@ export default function NewsFeed() {
             return;
         }
         try {
-            setUploadProgress(0); // Reset progress
-            let mediaData: { file: string; type: string } | undefined;
+            setUploadProgress(0);
+            const formData = new FormData();
+            formData.append("email", user.email);
+            formData.append("content", content);
+            formData.append("mode", "main");
             if (media) {
-                // Convert file to base64 for sending
-                const reader = new FileReader();
-                const fileData = await new Promise<string>((resolve) => {
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.readAsDataURL(media);
-                });
-                mediaData = { file: fileData, type: media.type };
+                formData.append("media", media);
             }
 
-            // Create the new post with progress tracking
-            const res = await axios.post(
-                "/api/create-post",
-                {
-                    email: user.email,
-                    content,
-                    mode: "main",
-                    media: mediaData,
+            const res = await axios.post("/api/create-post", formData, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "multipart/form-data",
                 },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    onUploadProgress: (progressEvent) => {
-                        if (progressEvent.total) {
-                            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                            setUploadProgress(percentCompleted);
-                        }
-                    },
-                }
-            );
+                onUploadProgress: (progressEvent) => {
+                    if (progressEvent.total) {
+                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        setUploadProgress(percentCompleted);
+                    }
+                },
+            });
             setMessage(res.data.message);
             setContent("");
             setMedia(null);
-            setUploadProgress(0); // Reset progress after completion
+            setUploadProgress(0);
 
-            // Fetch the latest posts to include the new one
             const newPostsRes = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -232,12 +216,10 @@ export default function NewsFeed() {
                 media_type: post.media_type,
             }));
 
-            // Replace the posts array with the latest data
             setPosts(newPostsData);
-            setOffset(0); // Reset offset for future fetches
+            setOffset(0);
             setHasMore(newPostsData.length === limit);
 
-            // Fetch comments for the new posts
             const newComments: { [postId: number]: CommentType[] } = { ...comments };
             for (const post of newPostsData) {
                 if (!newComments[post.id]) {
@@ -251,7 +233,7 @@ export default function NewsFeed() {
             setComments(newComments);
         } catch (err) {
             setMessage("Error posting: " + (err.response?.data?.message || err.message));
-            setUploadProgress(0); // Reset progress on error
+            setUploadProgress(0);
         }
     };
 
