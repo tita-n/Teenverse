@@ -1,7 +1,15 @@
 import express from "express";
 import { db } from "../database";
+import cloudinary from "cloudinary";
 
 const router = express.Router();
+
+// Configure Cloudinary
+cloudinary.v2.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // Get all posts (for Dashboard, exclude rants) with pagination
 router.get("/", async (req: express.Request, res: express.Response) => {
@@ -11,7 +19,7 @@ router.get("/", async (req: express.Request, res: express.Response) => {
 
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT p.*, u.username as actual_username, u.verified FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode != 'rant' ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+                "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode != 'rant' ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
                 [limit, offset],
                 (err, rows) => {
                     if (err) reject(err);
@@ -33,7 +41,7 @@ router.get("/newsfeed", async (req: express.Request, res: express.Response) => {
 
         const posts: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT p.*, u.username as actual_username, u.verified FROM posts p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+                "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
                 [limit, offset],
                 (err, rows) => {
                     if (err) reject(err);
@@ -49,7 +57,7 @@ router.get("/newsfeed", async (req: express.Request, res: express.Response) => {
 
 // Create a new post
 router.post("/create-post", async (req: express.Request, res: express.Response) => {
-    const { email, content, mode } = req.body;
+    const { email, content, mode, media } = req.body;
     if (!email || !content || !mode) {
         return res.status(400).json({ message: "Email, content, and mode are required" });
     }
@@ -65,10 +73,30 @@ router.post("/create-post", async (req: express.Request, res: express.Response) 
         });
         if (!user) return res.status(404).json({ message: "User not found" });
 
+        let mediaUrl: string | null = null;
+        let mediaType: string | null = null;
+
+        if (media) {
+            const { file, type } = media;
+            // Validate file size (10MB = 10 * 1024 * 1024 bytes)
+            const maxSize = 10 * 1024 * 1024;
+            if (file.size > maxSize) {
+                return res.status(400).json({ message: "Media file size exceeds 10MB limit" });
+            }
+
+            // Upload to Cloudinary
+            const uploadResult = await cloudinary.v2.uploader.upload(file, {
+                resource_type: type.startsWith("video") ? "video" : "image",
+                folder: "posts",
+            });
+            mediaUrl = uploadResult.secure_url;
+            mediaType = type.startsWith("video") ? "video" : "image";
+        }
+
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO posts (user_id, content, mode, created_at) VALUES (?, ?, ?, ?)",
-                [user.id, content, mode, new Date().toISOString()],
+                "INSERT INTO posts (user_id, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?)",
+                [user.id, content, mode, new Date().toISOString(), mediaUrl, mediaType],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -279,8 +307,8 @@ router.post("/share", async (req: express.Request, res: express.Response) => {
 
         await new Promise<void>((resolve, reject) => {
             db.run(
-                "INSERT INTO posts (user_id, content, mode, created_at, squad_id) VALUES (?, ?, ?, ?, ?)",
-                [user.id, post.content, post.mode, new Date().toISOString(), squadId],
+                "INSERT INTO posts (user_id, content, mode, created_at, squad_id, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [user.id, post.content, post.mode, new Date().toISOString(), squadId, post.media_url, post.media_type],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -299,7 +327,7 @@ router.get("/comments/:postId", async (req: express.Request, res: express.Respon
     try {
         const comments: any[] = await new Promise<any[]>((resolve, reject) => {
             db.all(
-                "SELECT c.*, u.username FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC",
+                "SELECT c.*, u.username, u.profile_media_url, u.profile_media_type FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC",
                 [postId],
                 (err, rows) => {
                     if (err) reject(err);
@@ -311,7 +339,7 @@ router.get("/comments/:postId", async (req: express.Request, res: express.Respon
         for (const comment of comments) {
             const replies: any[] = await new Promise<any[]>((resolve, reject) => {
                 db.all(
-                    "SELECT r.*, u.username FROM replies r JOIN users u ON r.user_id = u.id WHERE r.comment_id = ? ORDER BY r.created_at ASC",
+                    "SELECT r.*, u.username, u.profile_media_url, u.profile_media_type FROM replies r JOIN users u ON r.user_id = u.id WHERE r.comment_id = ? ORDER BY r.created_at ASC",
                     [comment.id],
                     (err, rows) => {
                         if (err) reject(err);
