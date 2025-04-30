@@ -25,6 +25,7 @@ import { AuthProvider } from "./hooks/useAuth";
 export default function App() {
     return (
         <AuthProvider>
+            <HelmetProvider>
             <Router>
                 <Routes>
                     <Route path="/" element={<Login />} />
@@ -51,6 +52,7 @@ export default function App() {
                     <Route path="*" element={<div>404 - Page Not Found</div>} />
                 </Routes>
             </Router>
+               <HelmetProvider>
         </AuthProvider>
     );
 }
