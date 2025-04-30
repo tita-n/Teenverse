@@ -13,6 +13,7 @@ import HypeBattles from "./pages/HypeBattles";
 import CloutMissions from "./pages/CloutMissions";
 import HallOfFame from "./pages/HallOfFame";
 import Shop from './pages/Shop';
+import Titan from './pages/Titan';
 import CreatePost from "./pages/CreatePost";
 import Analytics from "./pages/Analytics";
 import UltimateShowdown from "./pages/UltimateShowdown";
@@ -44,6 +45,7 @@ export default function App() {
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/ultimate-showdown" element={<UltimateShowdown />} />
                     <Route path="/chats" element={<ChatList />} />
+                    <Route path="/titan" element={<Titan />} />
                     <Route path="/chat/:conversationId" element={<ChatDetail />} />
                     <Route path="/settings" element={<Settings />} /> {/* Add this */}
                     <Route path="*" element={<div>404 - Page Not Found</div>} />
