@@ -10,7 +10,7 @@ export default function Titan() {
         <meta name="author" content="Titan" />
         <meta property="og:title" content="Titan | Teen Tech Genius & Visionary" />
         <meta property="og:description" content="Restoration Michael aka Titan is a 14-year-old Nigerian tech prodigy and founder of TeenVerse, a social platform revolutionizing Gen Z interaction." />
-        <meta property="og:image" content="/images/titan-og-banner.jpg" />
+        <meta property="og:image" content="https://i.postimg.cc/j2LxXtQh/Chat-GPT-Image-Apr-27-2025-08-41-04-PM.png" />
         <meta property="og:url" content="https://teenverse.onrender.com/titan" />
         <meta name="twitter:card" content="summary_large_image" />
 
