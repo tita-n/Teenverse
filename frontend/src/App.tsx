@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { HelmetProvider } from "react-helmet"; // Add this import
+import { HelmetProvider } from "react-helmet-async";
 import Register from "./Register";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -56,4 +56,4 @@ export default function App() {
             </HelmetProvider>
         </AuthProvider>
     );
-            }
+                        }
