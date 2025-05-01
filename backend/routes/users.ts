@@ -2,6 +2,7 @@ import express from "express";
 import { db } from "../database";
 import multer from "multer";
 import cloudinary from "cloudinary";
+import { User, Post } from "../types";
 
 function calculateLevel(xp: number): { level: number; rank: string } {
     let level = Math.floor(xp / 10) + 1;
@@ -38,30 +39,22 @@ const router = express.Router();
 router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
     const username = req.params.username;
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get(
-                "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
-                [username],
-                (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                }
-            );
-        });
-        if (!user) return res.status(404).json({ message: "User not found" });
+        const user = await db.get<User>(
+            `SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type 
+             FROM users WHERE username = ?`,
+            [username]
+        );
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
 
-        const posts: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT * FROM posts WHERE user_id = (SELECT id FROM users WHERE username = ?) ORDER BY created_at DESC",
-                [username],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
+        const posts = await db.all<Post>(
+            `SELECT id, user_id, username, content, mode, likes, created_at, media_url, media_type, reactions 
+             FROM posts WHERE user_id = ? ORDER BY created_at DESC`,
+            [user.id]
+        );
 
-        const { level, rank } = calculateLevel(user.xp);
+        const { level, rank } = calculateLevel(user.xp || 0);
 
         const userProfile = {
             username: user.username,
@@ -75,8 +68,8 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
 
         res.json({ user: userProfile, posts });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error fetching profile:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error(`[${new Date().toISOString()}] Fetch profile error:`, err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
@@ -93,13 +86,10 @@ router.post("/profile/upload", upload.single("media"), async (req: express.Reque
     }
 
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
-                if (err) reject(err);
-                if (!row) reject(new Error("User not found"));
-                resolve(row);
-            });
-        });
+        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
 
         const uploadResult = await new Promise<cloudinary.UploadApiResponse>((resolve, reject) => {
             const stream = cloudinary.v2.uploader.upload_stream(
@@ -119,21 +109,15 @@ router.post("/profile/upload", upload.single("media"), async (req: express.Reque
         const mediaUrl = uploadResult.secure_url;
         const mediaType = file.mimetype.startsWith("image") ? "image" : "video";
 
-        await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE users SET profile_media_url = ?, profile_media_type = ? WHERE id = ?",
-                [mediaUrl, mediaType, user.id],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
-        });
+        await db.run(
+            "UPDATE users SET profile_media_url = ?, profile_media_type = ? WHERE id = ?",
+            [mediaUrl, mediaType, user.id]
+        );
 
         res.json({ message: "Profile media uploaded successfully", profile_media_url: mediaUrl, profile_media_type: mediaType });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error uploading profile media:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error(`[${new Date().toISOString()}] Upload profile media error:`, err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
@@ -150,28 +134,20 @@ router.post("/verify", async (req: express.Request, res: express.Response) => {
         return res.status(400).json({ message: "Username and verify (boolean) are required" });
     }
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-        if (!user) return res.status(404).json({ message: "User not found" });
+        const user = await db.get<User>("SELECT id FROM users WHERE username = ?", [username]);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
 
-        await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE users SET verified = ? WHERE username = ?",
-                [verify ? 1 : 0, username],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
-        });
+        await db.run(
+            "UPDATE users SET verified = ? WHERE username = ?",
+            [verify ? 1 : 0, username]
+        );
+
         res.json({ message: `User ${username} ${verify ? "verified" : "unverified"} successfully` });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error verifying user:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error(`[${new Date().toISOString()}] Verify user error:`, err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
