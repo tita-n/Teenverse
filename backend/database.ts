@@ -1,24 +1,45 @@
-import { createClient } from "@libsql/client";
+import { createClient, Client, SqlValue } from "@libsql/client";
 
 // Initialize Turso client
-const dbUrl = process.env.TURSO_DB_URL; // e.g., libsql://your-db.turso.io
+const dbUrl = process.env.TURSO_DB_URL;
 const authToken = process.env.TURSO_AUTH_TOKEN;
 
 if (!dbUrl || !authToken) {
   throw new Error("Missing TURSO_DB_URL or TURSO_AUTH_TOKEN");
 }
 
-export const db = createClient({
+export const db: Client & {
+  run: (sql: string, params?: SqlValue[]) => Promise<void>;
+  get: <T>(sql: string, params?: SqlValue[]) => Promise<T | null>;
+  all: <T>(sql: string, params?: SqlValue[]) => Promise<T[]>;
+  query: <T>(sql: string, params: SqlValue[], callback: (err: Error | null, rows: T[]) => void) => void;
+} = createClient({
   url: dbUrl,
   authToken: authToken,
-});
+}) as any;
 
-// Log all SQL queries for debugging
-db.on("trace", (sql) => {
-  console.log(`[${new Date().toISOString()}] SQL Query: ${sql}`);
-});
+// Mimic sqlite3 methods
+db.run = async (sql: string, params: SqlValue[] = []) => {
+  await db.execute({ sql, args: params });
+};
 
-// Create tables if they don't exist
+db.get = async <T>(sql: string, params: SqlValue[] = []): Promise<T | null> => {
+  const result = await db.execute({ sql, args: params });
+  return result.rows.length > 0 ? (result.rows[0] as T) : null;
+};
+
+db.all = async <T>(sql: string, params: SqlValue[] = []): Promise<T[]> => {
+  const result = await db.execute({ sql, args: params });
+  return result.rows as T[];
+};
+
+db.query = <T>(sql: string, params: SqlValue[], callback: (err: Error | null, rows: T[]) => void) => {
+  db.execute({ sql, args: params })
+    .then((result) => callback(null, result.rows as T[]))
+    .catch((err) => callback(err, []));
+};
+
+// Create tables
 db.execute(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -575,7 +596,7 @@ initialItems.forEach((item) => {
   });
 });
 
-// Add indices for performance
+// Add indices
 db.execute("CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)");
 db.execute("CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)");
 db.execute("CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)");
@@ -599,31 +620,27 @@ db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(con
 db.execute("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)");
 db.execute("CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)");
 
-// Set creator_badge and add to developer_picks for restorationmichael3@gmail.com
-db.query(
+// Set creator_badge for restorationmichael3@gmail.com
+db.get<{ id: number; username: string }>(
   "SELECT id, username FROM users WHERE email = ?",
-  ["restorationmichael3@gmail.com"],
-  (err, rows: any[]) => {
-    if (err) {
-      console.error("Error fetching user for creator badge:", err);
-      return;
-    }
-    if (rows.length > 0) {
-      const user = rows[0];
-      db.execute({
-        sql: `UPDATE users SET creator_badge = ? WHERE id = ?`,
-        args: ["Platform Creator", user.id],
-      });
-      db.execute({
-        sql: `INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)`,
-        args: [user.id, "PrimeArchitect"],
-      });
-      console.log(`Creator badge set for ${user.username}`);
-    } else {
-      console.log("User with email restorationmichael3@gmail.com not found for creator setup");
-    }
+  ["restorationmichael3@gmail.com"]
+).then((user) => {
+  if (user) {
+    db.execute({
+      sql: `UPDATE users SET creator_badge = ? WHERE id = ?`,
+      args: ["Platform Creator", user.id],
+    });
+    db.execute({
+      sql: `INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)`,
+      args: [user.id, "PrimeArchitect"],
+    });
+    console.log(`Creator badge set for ${user.username}`);
+  } else {
+    console.log("User with email restorationmichael3@gmail.com not found for creator setup");
   }
-);
+}).catch((err) => {
+  console.error("Error setting creator badge:", err);
+});
 
 // Initial setup for the next Ultimate Showdown
 const nextMonth = new Date();
