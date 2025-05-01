@@ -12,7 +12,7 @@ cloudinary.v2.config({
 
 // Configure Multer for file uploads
 const storage = multer.memoryStorage();
-const  const upload = multer({
+const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
     fileFilter: (req, file, cb) => {
