@@ -524,3 +524,4 @@ router.post("/comments/pin", async (req: express.Request, res: express.Response)
 });
 
 export default router;
+}
