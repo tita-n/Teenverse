@@ -1,8 +1,12 @@
 import express from "express";
-import { db } from "../database";
+import { initDb } from './database.ts';
 import cloudinary from "cloudinary";
 import multer from "multer";
 import { UploadApiResponse, UploadApiErrorResponse } from "cloudinary";
+
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store db in app for routes to access
 
 // Configure Cloudinary
 cloudinary.v2.config({
