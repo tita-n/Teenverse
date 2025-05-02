@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import path from "path";
 import postRoutes from './routes/posts';
 import usersRouter from "./routes/users"; // Add this import
-import { db } from "./database";
+import { initDb } from './database.ts';
 import http from 'http';
 import { Server } from 'socket.io';
 import { User, ShopItem, RouteDependencies } from './types'; // Import interfaces
@@ -111,7 +111,11 @@ const routeDependencies: RouteDependencies = {
     db,
     SECRET_KEY
 };
- 
+
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store db in app for routes to access
+
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
