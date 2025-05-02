@@ -2,6 +2,7 @@ import sqlite3 from "sqlite3";
 import path from "path";
 import axios from "axios";
 import fs from "fs/promises";
+import cron from "node-cron";
 
 // Download users.db from GitHub
 async function downloadDb() {
@@ -17,6 +18,43 @@ async function downloadDb() {
     console.error(`[${new Date().toISOString()}] Error downloading database:`, error.message);
   }
 }
+
+// Upload users.db to GitHub
+async function uploadDb() {
+  try {
+    const dbPath = path.join(__dirname, "../users.db");
+    const fileContent = await fs.readFile(dbPath);
+    const response = await axios.get(
+      "https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db",
+      {
+        headers: {
+          Authorization: `Bearer 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`,
+        },
+      }
+    );
+    const sha = response.data.sha; // Get the current file's SHA for updates
+    await axios.put(
+      "https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db",
+      {
+        message: `Update users.db ${new Date().toISOString()}`,
+        content: fileContent.toString("base64"),
+        branch: "main",
+        sha,
+      },
+      {
+        headers: {
+          Authorization: `Bearer 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`,
+        },
+      }
+    );
+    console.log(`[${new Date().toISOString()}] Database uploaded to GitHub`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error uploading database:`, error.message);
+  }
+}
+
+// Schedule upload every hour
+cron.schedule("0 */1 * * *", uploadDb);
 
 // Initialize SQLite database
 const dbPath = path.join(__dirname, "../users.db");
@@ -220,7 +258,7 @@ export async function initDb() {
 
     // Hype Battles table
     db.run(`
-      CREATE TABLE IF NOT EXISTS incapaz_battles (
+      CREATE TABLE IF NOT EXISTS hype_battles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         username TEXT,
@@ -584,7 +622,7 @@ export async function initDb() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         post_id INTEGER,
         user_id INTEGER,
-        squadron_id INTEGER,
+        squad_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(post_id) REFERENCES posts(id),
         FOREIGN KEY(user_id) REFERENCES users(id),
@@ -758,4 +796,4 @@ export async function initDb() {
   });
 
   return db;
-}
+          }
