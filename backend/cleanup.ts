@@ -1,4 +1,8 @@
-import { db } from "./database";
+import { initDb } from './database.ts';
+
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store db in app for routes to access
 
 export function cleanupPosts() {
     db.run(`
