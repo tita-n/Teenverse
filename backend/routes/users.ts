@@ -1,7 +1,11 @@
-import express from "express";
-import { db } from "../database";
+import express from "express"
+import { initDb } from './database.ts';
 import multer from "multer";
 import cloudinary from "cloudinary";
+
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store db in app for routes to access
 
 function calculateLevel(xp: number): { level: number; rank: string } {
     let level = Math.floor(xp / 10) + 1;
