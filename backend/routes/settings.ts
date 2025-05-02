@@ -1,8 +1,12 @@
 import express from "express";
 import bcrypt from "bcrypt";
-import { db } from "../database";
+import { initDb } from './database.ts';
 
 const router = express.Router();
+
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store db in app for routes to access
 
 // Helper to fetch user by email
 const getUserByEmail = (email: string): Promise<any> => {
