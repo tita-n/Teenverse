@@ -13,7 +13,7 @@ cloudinary.v2.config({
 
 // Configure Multer for file uploads
 const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.memoryStorage(), // Store file in memory for Cloudinary upload
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
 });
 
@@ -25,20 +25,18 @@ router.get("/", async (req: express.Request, res: express.Response) => {
         const limit = parseInt(req.query.limit as string) || 10;
         const offset = parseInt(req.query.offset as string) || 0;
 
-        const posts = await db.all<Post>(
-            `SELECT p.id, p.user_id, p.username, p.content, p.mode, p.likes, p.created_at, p.media_url, p.media_type, p.reactions,
-                    u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            WHERE p.mode != 'rant'
-            ORDER BY p.created_at DESC
-            LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-
+        const posts: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode != 'rant' ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+                [limit, offset],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
         res.json(posts);
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Fetch posts error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -49,55 +47,55 @@ router.get("/newsfeed", async (req: express.Request, res: express.Response) => {
         const limit = parseInt(req.query.limit as string) || 10;
         const offset = parseInt(req.query.offset as string) || 0;
 
-        const posts = await db.all<Post>(
-            `SELECT p.id, p.user_id, p.username, p.content, p.mode, p.likes, p.created_at, p.media_url, p.media_type, p.reactions,
-                    u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            ORDER BY p.created_at DESC
-            LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-
+        const posts: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+                [limit, offset],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
         res.json(posts);
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Fetch newsfeed error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
 
 // Create a new post
 router.post("/create-post", upload.single("media"), async (req: express.Request, res: express.Response) => {
-    const Snap: Snap = {
-        email: req.body.email,
-        content: req.body.content,
-        mode: req.body.mode,
-        mediaFile: req.file,
-    };
+    const { email, content, mode } = req.body;
+    const mediaFile = req.file; // Binary file from FormData
 
-    if (!Snap.email || !Snap.content || !Snap.mode) {
+    if (!email || !content || !mode) {
         return res.status(400).json({ message: "Email, content, and mode are required" });
     }
-    if (!req.user || req.user.email !== Snap.email) {
+    if (!req.user || req.user.email !== email) {
         return res.status(403).json({ message: "Unauthorized" });
     }
 
     try {
-        const user = await db.get<User>("SELECT id, username FROM users WHERE email = ?", [Snap.email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
         let mediaUrl: string | null = null;
         let mediaType: string | null = null;
 
-        if (Snap.mediaFile) {
+        if (mediaFile) {
+            // Generate unique public_id without uuid
             const uniqueId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+            // Upload to Cloudinary directly from buffer
             const uploadResult = await new Promise<UploadApiResponse>((resolve, reject) => {
                 const stream = cloudinary.v2.uploader.upload_stream(
                     {
-                        resource_type: Snap.mediaFile.mimetype.startsWith("video") ? "video" : "image",
+                        resource_type: mediaFile.mimetype.startsWith("video") ? "video" : "image",
                         folder: "posts",
                         public_id: uniqueId,
                     },
@@ -106,21 +104,27 @@ router.post("/create-post", upload.single("media"), async (req: express.Request,
                         resolve(result!);
                     }
                 );
-                stream.end(Snap.mediaFile.buffer);
+                stream.end(mediaFile.buffer);
             });
 
             mediaUrl = uploadResult.secure_url;
-            mediaType = Snap.mediaFile.mimetype.startsWith("video") ? "video" : "image";
+            mediaType = mediaFile.mimetype.startsWith("video") ? "video" : "image";
         }
 
-        await db.run(
-            "INSERT INTO posts (user_id, username, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [user.id, user.username, Snap.content, Snap.mode, new Date().toISOString(), mediaUrl, mediaType]
-        );
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO posts (user_id, username, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [user.id, user.username, content, mode, new Date().toISOString(), mediaUrl, mediaType],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
 
         res.json({ message: "Post created successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Create post error:`, err);
+        console.error("Error creating post:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -136,23 +140,33 @@ router.put("/edit/:postId", async (req: express.Request, res: express.Response) 
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<{ user_id: number }>("SELECT user_id FROM posts WHERE id = ?", [postId]);
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT user_id FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
         if (post.user_id !== user.id) {
             return res.status(403).json({ message: "Unauthorized: You can only edit your own posts" });
         }
 
-        await db.run("UPDATE posts SET content = ? WHERE id = ?", [content, postId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE posts SET content = ? WHERE id = ?", [content, postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Post updated successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Edit post error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -168,23 +182,33 @@ router.delete("/delete/:postId", async (req: express.Request, res: express.Respo
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const usr = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!usr) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<{ user_id: number }>("SELECT user_id FROM posts WHERE id = ?", [postId]);
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
-        if (post.user_id !== usr.id) {
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT user_id FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
+        if (post.user_id !== user.id) {
             return res.status(403).json({ message: "Unauthorized: You can only delete your own posts" });
         }
 
-        await db.run("DELETE FROM posts WHERE id = ?", [postId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("DELETE FROM posts WHERE id = ?", [postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Post deleted successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Delete post error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -199,15 +223,22 @@ router.post("/like", async (req: express.Request, res: express.Response) => {
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        await db.run("UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Post liked successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Like post error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -222,15 +253,21 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id, username FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id, username FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<{ reactions: string }>("SELECT reactions FROM posts WHERE id = ?", [postId]);
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT reactions FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
 
         let reactions = post.reactions ? JSON.parse(post.reactions) : {};
         reactions[reaction] = reactions[reaction] || [];
@@ -238,10 +275,14 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
             reactions[reaction].push(user.username);
         }
 
-        await db.run("UPDATE posts SET reactions = ? WHERE id = ?", [JSON.stringify(reactions), postId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE posts SET reactions = ? WHERE id = ?", [JSON.stringify(reactions), postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Reaction added successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] React to post error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -256,32 +297,34 @@ router.post("/share", async (req: express.Request, res: express.Response) => {
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<Post>(
-            "SELECT content, mode, media_url, media_type FROM posts WHERE id = ?",
-            [postId]
-        );
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT * FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
 
-        await db.run(
-            "INSERT INTO posts (user_id, content, mode, created_at, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?)",
-            [user.id, post.content, post.mode, new Date().toISOString(), post.media_url, post.media_type]
-        );
-
-        await db.run(
-            "INSERT INTO post_shares (post_id, user_id, squad_id, created_at) VALUES (?, ?, ?, ?)",
-            [postId, user.id, squadId, new Date().toISOString()]
-        );
-
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO posts (user_id, content, mode, created_at, squad_id, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [user.id, post.content, post.mode, new Date().toISOString(), squadId, post.media_url, post.media_type],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
         res.json({ message: "Post shared successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Share post error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -290,32 +333,33 @@ router.post("/share", async (req: express.Request, res: express.Response) => {
 router.get("/comments/:postId", async (req: express.Request, res: express.Response) => {
     const postId = req.params.postId;
     try {
-        const comments = await db.all<Comment>(
-            `SELECT c.id, c.post_id, c.user_id, c.content, c.created_at, c.pinned, c.likes,
-                    u.username, u.profile_media_url, u.profile_media_type
-            FROM comments c
-            JOIN users u ON c.user_id = u.id
-            WHERE c.post_id = ?
-            ORDER BY c.created_at ASC`,
-            [postId]
-        );
+        const comments: any[] = await new Promise<any[]>((resolve, reject) => {
+            db.all(
+                "SELECT c.*, u.username, u.profile_media_url, u.profile_media_type FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC",
+                [postId],
+                (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                }
+            );
+        });
 
         for (const comment of comments) {
-            const replies = await db.all<Reply>(
-                `SELECT r.id, r.comment_id, r.user_id, r.content, r.created_at,
-                        u.username, u.profile_media_url, u.profile_media_type
-                FROM replies r
-                JOIN users u ON r.user_id = u.id
-                WHERE r.comment_id = ?
-                ORDER BY r.created_at ASC`,
-                [comment.id]
-            );
+            const replies: any[] = await new Promise<any[]>((resolve, reject) => {
+                db.all(
+                    "SELECT r.*, u.username, u.profile_media_url, u.profile_media_type FROM replies r JOIN users u ON r.user_id = u.id WHERE r.comment_id = ? ORDER BY r.created_at ASC",
+                    [comment.id],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        resolve(rows);
+                    }
+                );
+            });
             comment.replies = replies;
         }
 
         res.json(comments);
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Fetch comments error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -330,24 +374,36 @@ router.post("/comments", async (req: express.Request, res: express.Response) => 
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<{ id: number }>("SELECT id FROM posts WHERE id = ?", [parseInt(postId)]);
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM posts WHERE id = ?", [parseInt(postId)], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
 
-        await db.run(
-            "INSERT INTO comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
-            [parseInt(postId), user.id, content, new Date().toISOString()]
-        );
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
+                [parseInt(postId), user.id, content, new Date().toISOString()],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
         res.json({ message: "Comment added successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Add comment error:`, err);
-        res.status(500).json({ message: "Internal server error" });
+        console.error("Error adding comment:", err);
+        res.status(500).json({ message: "Internal server error: " + err.message });
     }
 });
 
@@ -361,18 +417,26 @@ router.post("/comments/reply", async (req: express.Request, res: express.Respons
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        await db.run(
-            "INSERT INTO replies (comment_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
-            [commentId, user.id, content, new Date().toISOString()]
-        );
+        await new Promise<void>((resolve, reject) => {
+            db.run(
+                "INSERT INTO replies (comment_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
+                [commentId, user.id, content, new Date().toISOString()],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
         res.json({ message: "Reply added successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Add reply error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -387,15 +451,22 @@ router.post("/comments/like", async (req: express.Request, res: express.Response
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        await db.run("UPDATE comments SET likes = likes + 1 WHERE id = ?", [commentId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE comments SET likes = likes + 1 WHERE id = ?", [commentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Comment liked successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Like comment error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
@@ -410,24 +481,40 @@ router.post("/comments/pin", async (req: express.Request, res: express.Response)
         return res.status(403).json({ message: "Unauthorized" });
     }
     try {
-        const user = await db.get<User>("SELECT id FROM users WHERE email = ?", [email]);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
+        const user: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-        const post = await db.get<{ user_id: number }>("SELECT user_id FROM posts WHERE id = ?", [postId]);
-        if (!post) {
-            return res.status(404).json({ message: "Post not found" });
-        }
+        const post: any = await new Promise<any>((resolve, reject) => {
+            db.get("SELECT user_id FROM posts WHERE id = ?", [postId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        if (!post) return res.status(404).json({ message: "Post not found" });
         if (post.user_id !== user.id) {
             return res.status(403).json({ message: "Unauthorized: You can only pin comments on your own posts" });
         }
 
-        await db.run("UPDATE comments SET pinned = 0 WHERE post_id = ?", [postId]);
-        await db.run("UPDATE comments SET pinned = 1 WHERE id = ?", [commentId]);
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE comments SET pinned = 0 WHERE post_id = ?", [postId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            db.run("UPDATE comments SET pinned = 1 WHERE id = ?", [commentId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
         res.json({ message: "Comment pinned successfully" });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Pin comment error:`, err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
