@@ -71,6 +71,19 @@ const io = new Server(server, {
     }
 });
 
+// Initialize database and mount routes
+initDb().then((db) => {
+    app.set('db', db); // Store
+
+// Middleware to attach the database to req.db
+router.use((req, res, next) => {
+        req.db = app.get('db');
+        if (!req.db) {
+            return res.status(500).json({ message: "Database not initialized" });
+        }
+        next();
+    });
+
 // Middleware to authenticate JWT token
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const authHeader = req.headers['authorization'];
@@ -111,10 +124,6 @@ const routeDependencies: RouteDependencies = {
     db,
     SECRET_KEY
 };
-
-// Initialize database and mount routes
-initDb().then((db) => {
-    app.set('db', db); // Store db in app for routes to access
 
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
