@@ -1,0 +1,31 @@
+export interface User {
+  id: number;
+  email: string;
+  username: string;
+  password: string;
+  dob: string;
+  verified?: number;
+  xp?: number;
+  coins?: number;
+  snitch_status?: string;
+  creator_badge?: string;
+  tier?: number;
+  wins?: number;
+  losses?: number;
+  title?: string;
+  legend_status?: string;
+  bio?: string;
+  background_theme?: string;
+  spending_restrictions?: number;
+  auto_earn_uploads?: number;
+  theme?: string;
+  animations_enabled?: number;
+  font_size?: string;
+  language?: string;
+  snitch_risk?: number;
+  profile_media_url?: string;
+  profile_media_type?: string;
+  is_moderator?: number;
+  verified_status?: number;
+  early_access?: number;
+}
