@@ -1,19 +1,16 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES6",
     "module": "CommonJS",
-    "rootDir": "backend",
-    "outDir": "dist",
+    "rootDir": "./backend",
+    "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
     "moduleResolution": "node",
-    "strict": false,
-    "baseUrl": "./"
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "typeRoots": ["./backend/types", "./node_modules/@types"]
   },
-  "include": ["backend/**/*.ts"],
-  "exclude": ["node_modules", "frontend"],
-  "types": ["node", "sqlite3"]
+  "include": ["backend/**/*", "types/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
