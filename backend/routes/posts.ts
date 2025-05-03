@@ -4,6 +4,8 @@ import cloudinary from 'cloudinary';
 import multer from 'multer';
 import { UploadApiResponse, UploadApiErrorResponse } from 'cloudinary';
 import { User } from './types';
+require('dotenv').config(); // Added to match former code
+
 
 const app = express();
 const router = express.Router();
