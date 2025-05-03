@@ -1,20 +1,21 @@
-import sqlite3 from "sqlite3";
-import path from "path";
-import axios from "axios";
-import fs from "fs/promises";
-import cron from "node-cron";
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import axios from 'axios';
+import fs from 'fs/promises';
+import cron from 'node-cron';
+import { User } from './types';
 
 // Download users.db from GitHub
 async function downloadDb() {
   try {
-    const dbPath = path.join(__dirname, "../users.db");
+    const dbPath = path.join(__dirname, '../users.db');
     const response = await axios.get(
-      "https://raw.githubusercontent.com/Restorationmichael4/teenverse-db/main/users.db",
-      { responseType: "arraybuffer" }
+      'https://raw.githubusercontent.com/Restorationmichael4/teenverse-db/main/users.db',
+      { responseType: 'arraybuffer' }
     );
     await fs.writeFile(dbPath, response.data);
     console.log(`[${new Date().toISOString()}] Database downloaded to ${dbPath}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[${new Date().toISOString()}] Error downloading database:`, error.message);
   }
 }
@@ -22,23 +23,23 @@ async function downloadDb() {
 // Upload users.db to GitHub
 async function uploadDb() {
   try {
-    const dbPath = path.join(__dirname, "../users.db");
+    const dbPath = path.join(__dirname, '../users.db');
     const fileContent = await fs.readFile(dbPath);
     const response = await axios.get(
-      "https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db",
+      'https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db',
       {
         headers: {
           Authorization: `Bearer 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`,
         },
       }
     );
-    const sha = response.data.sha; // Get the current file's SHA for updates
+    const sha = response.data.sha;
     await axios.put(
-      "https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db",
+      'https://api.github.com/repos/Restorationmichael4/teenverse-db/contents/users.db',
       {
         message: `Update users.db ${new Date().toISOString()}`,
-        content: fileContent.toString("base64"),
-        branch: "main",
+        content: fileContent.toString('base64'),
+        branch: 'main',
         sha,
       },
       {
@@ -48,35 +49,32 @@ async function uploadDb() {
       }
     );
     console.log(`[${new Date().toISOString()}] Database uploaded to GitHub`);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[${new Date().toISOString()}] Error uploading database:`, error.message);
   }
 }
 
 // Schedule upload every hour
-cron.schedule("0 */1 * * *", uploadDb);
+cron.schedule('0 */1 * * *', uploadDb);
 
 // Initialize SQLite database
-const dbPath = path.join(__dirname, "../users.db");
+const dbPath = path.join(__dirname, '../users.db');
 console.log(`[${new Date().toISOString()}] Database path: ${dbPath}`);
 
-// Export a function to initialize the database after downloading
-export async function initDb() {
-  await downloadDb(); // Download users.db first
+export async function initDb(): Promise<sqlite3.Database> {
+  await downloadDb();
   const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
-      console.error("Error opening database:", err.message);
+      console.error('Error opening database:', err.message);
     } else {
-      console.log("Connected to SQLite database.");
+      console.log('Connected to SQLite database.');
     }
   });
 
-  // Log all SQL queries for debugging
-  db.on("trace", (sql) => {
+  db.on('trace', (sql) => {
     console.log(`[${new Date().toISOString()}] SQL Query: ${sql}`);
   });
 
-  // Create tables if they don't exist
   db.serialize(() => {
     // Users table
     db.run(`
@@ -90,7 +88,7 @@ export async function initDb() {
         xp INTEGER DEFAULT 0,
         coins INTEGER DEFAULT 0,
         snitch_status TEXT,
-        creator_badge INTEGER DEFAULT 0,
+        creator_badge TEXT,
         tier INTEGER DEFAULT 1,
         wins INTEGER DEFAULT 0,
         losses INTEGER DEFAULT 0,
@@ -106,7 +104,10 @@ export async function initDb() {
         language TEXT DEFAULT 'en',
         snitch_risk INTEGER DEFAULT 0,
         profile_media_url TEXT,
-        profile_media_type TEXT
+        profile_media_type TEXT,
+        is_moderator INTEGER DEFAULT 0,
+        verified_status INTEGER DEFAULT 0,
+        early_access INTEGER DEFAULT 0
       )
     `);
 
@@ -122,6 +123,7 @@ export async function initDb() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         media_url TEXT,
         media_type TEXT,
+        reactions TEXT DEFAULT '{}',
         FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
@@ -329,8 +331,8 @@ export async function initDb() {
         clip_url TEXT NOT NULL,
         category TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
         UNIQUE(user_id, tournament_id, category)
       )
     `);
@@ -343,8 +345,8 @@ export async function initDb() {
         clip_id INTEGER NOT NULL,
         category TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (clip_id) REFERENCES showdown_clips(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(clip_id) REFERENCES showdown_clips(id),
         UNIQUE(user_id, category)
       )
     `);
@@ -371,7 +373,7 @@ export async function initDb() {
         start_date TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         winner_id INTEGER,
-        FOREIGN KEY (winner_id) REFERENCES users(id)
+        FOREIGN KEY(winner_id) REFERENCES users(id)
       )
     `);
 
@@ -382,9 +384,9 @@ export async function initDb() {
         user_id INTEGER,
         status TEXT,
         bracket_position INTEGER,
-        FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        PRIMARY KEY (tournament_id, user_id)
+        FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        PRIMARY KEY(tournament_id, user_id)
       )
     `);
 
@@ -398,10 +400,10 @@ export async function initDb() {
         target_user_id INTEGER,
         coins_spent INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id),
-        FOREIGN KEY (battle_id) REFERENCES hype_battles(id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (target_user_id) REFERENCES users(id)
+        FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id),
+        FOREIGN KEY(battle_id) REFERENCES hype_battles(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(target_user_id) REFERENCES users(id)
       )
     `);
 
@@ -412,7 +414,7 @@ export async function initDb() {
         user_id INTEGER,
         border_style TEXT,
         awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
 
@@ -424,8 +426,8 @@ export async function initDb() {
         tournament_id INTEGER,
         rank INTEGER,
         awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (tournament_id) REFERENCES showdown_tournaments(id)
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id)
       )
     `);
 
@@ -437,8 +439,8 @@ export async function initDb() {
         post_id INTEGER,
         total_likes INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (post_id) REFERENCES posts(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(post_id) REFERENCES posts(id),
         UNIQUE(user_id)
       )
     `);
@@ -455,7 +457,7 @@ export async function initDb() {
       )
     `);
 
-    // Rants table (anonymous)
+    // Rants table
     db.run(`
       CREATE TABLE IF NOT EXISTS rants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -469,7 +471,7 @@ export async function initDb() {
       )
     `);
 
-    // Rant Comments table (anonymous)
+    // Rant Comments table
     db.run(`
       CREATE TABLE IF NOT EXISTS rant_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -501,12 +503,12 @@ export async function initDb() {
         user_id INTEGER NOT NULL,
         item_id INTEGER NOT NULL,
         purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (item_id) REFERENCES shop_items(id)
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(item_id) REFERENCES shop_items(id)
       )
     `);
 
-    // Conversations table (for DMs)
+    // Conversations table
     db.run(`
       CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -521,7 +523,7 @@ export async function initDb() {
       )
     `);
 
-    // Messages table (for DMs)
+    // Messages table
     db.run(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -537,7 +539,7 @@ export async function initDb() {
       )
     `);
 
-    // Blocked Users table (for Privacy & Safety)
+    // Blocked Users table
     db.run(`
       CREATE TABLE IF NOT EXISTS blocked_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -548,31 +550,6 @@ export async function initDb() {
         FOREIGN KEY(blocked_user_id) REFERENCES users(id)
       )
     `);
-
-    // Add columns to users for special privileges
-    db.run(`
-      ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0
-    `, (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("Error adding is_moderator column:", err);
-      }
-    });
-
-    db.run(`
-      ALTER TABLE users ADD COLUMN verified_status INTEGER DEFAULT 0
-    `, (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("Error adding verified_status column:", err);
-      }
-    });
-
-    db.run(`
-      ALTER TABLE users ADD COLUMN early_access INTEGER DEFAULT 0
-    `, (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("Error adding early_access column:", err);
-      }
-    });
 
     // Post Comments table
     db.run(`
@@ -630,15 +607,6 @@ export async function initDb() {
       )
     `);
 
-    // Add reactions column to posts table
-    db.run(`
-      ALTER TABLE posts ADD COLUMN reactions TEXT DEFAULT '{}'
-    `, (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("Error adding reactions column to posts:", err);
-      }
-    });
-
     // Comments table
     db.run(`
       CREATE TABLE IF NOT EXISTS comments (
@@ -649,8 +617,8 @@ export async function initDb() {
         created_at TEXT NOT NULL,
         pinned INTEGER DEFAULT 0,
         likes INTEGER DEFAULT 0,
-        FOREIGN KEY (post_id) REFERENCES posts(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY(post_id) REFERENCES posts(id),
+        FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
 
@@ -662,10 +630,47 @@ export async function initDb() {
         user_id INTEGER NOT NULL,
         content TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        FOREIGN KEY (comment_id) REFERENCES comments(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY(comment_id) REFERENCES comments(id),
+        FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
+
+    // Alter tables (with error handling)
+    db.run(
+      `ALTER TABLE users ADD COLUMN is_moderator INTEGER DEFAULT 0`,
+      (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+          console.error('Error adding is_moderator column:', err);
+        }
+      }
+    );
+
+    db.run(
+      `ALTER TABLE users ADD COLUMN verified_status INTEGER DEFAULT 0`,
+      (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+          console.error('Error adding verified_status column:', err);
+        }
+      }
+    );
+
+    db.run(
+      `ALTER TABLE users ADD COLUMN early_access INTEGER DEFAULT 0`,
+      (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+          console.error('Error adding early_access column:', err);
+        }
+      }
+    );
+
+    db.run(
+      `ALTER TABLE posts ADD COLUMN reactions TEXT DEFAULT '{}'`,
+      (err) => {
+        if (err && !err.message.includes('duplicate column')) {
+          console.error('Error adding reactions column to posts:', err);
+        }
+      }
+    );
 
     // Seed shop items
     const initialItems = [
@@ -696,7 +701,7 @@ export async function initDb() {
       { name: 'Holographic Shield', category: 'accessory', price: 420, image_url: 'https://i.postimg.cc/KYbHBLZr/image-fx-25.png', description: 'Defend in style.', is_limited: 0 },
     ];
 
-    initialItems.forEach(item => {
+    initialItems.forEach((item) => {
       db.run(
         `INSERT OR IGNORE INTO shop_items (name, category, price, image_url, description, is_limited, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [item.name, item.category, item.price, item.image_url, item.description, item.is_limited, item.stock],
@@ -706,94 +711,85 @@ export async function initDb() {
       );
     });
 
-    // Add index for developer_picks
-    db.run("CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)");
+    // Add indices
+    db.run('CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_comment_replies_comment ON comment_replies(comment_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)');
 
-    // Add indices for shop tables
-    db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)");
-
-    // Add indices for performance
-    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_comment_replies_comment ON comment_replies(comment_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)");
-
-    // Add indices for chat tables
-    db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)");
-    db.run("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)");
-
-    // Add index for blocked_users
-    db.run("CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)");
-
-    // Set creator_badge and add to developer_picks for restorationmichael3@gmail.com
+    // Set creator_badge and developer_picks
     db.get(
-      "SELECT id, username FROM users WHERE email = ?",
-      ["restorationmichael3@gmail.com"],
-      (err, user) => {
+      'SELECT id, username FROM users WHERE email = ?',
+      ['restorationmichael3@gmail.com'],
+      (err, row: User | undefined) => {
         if (err) {
-          console.error("Error fetching user for creator badge:", err);
+          console.error('Error fetching user for creator badge:', err);
           return;
         }
-        if (user) {
+        if (row) {
           db.run(
             `UPDATE users SET creator_badge = 'Platform Creator' WHERE id = ?`,
-            [user.id],
+            [row.id],
             (err) => {
-              if (err) console.error("Error setting creator badge:", err);
-              else console.log("Creator badge set for restorationmichael3@gmail.com");
+              if (err) console.error('Error setting creator badge:', err);
+              else console.log('Creator badge set for restorationmichael3@gmail.com');
             }
           );
 
           db.run(
             `INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)`,
-            [user.id, "PrimeArchitect"],
+            [row.id, 'PrimeArchitect'],
             (err) => {
-              if (err) console.error("Error adding to developer_picks:", err);
-              else console.log(`Added ${user.username} as PrimeArchitect to developer_picks`);
+              if (err) console.error('Error adding to developer_picks:', err);
+              else console.log(`Added ${row.username} as PrimeArchitect to developer_picks`);
             }
           );
         } else {
-          console.log("User with email restorationmichael3@gmail.com not found for creator setup");
+          console.log('User with email restorationmichael3@gmail.com not found for creator setup');
         }
       }
     );
 
-    // Initial setup for the next Ultimate Showdown
+    // Initial setup for showdown tournament
     const nextMonth = new Date();
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     nextMonth.setDate(1);
     db.run(
-      "INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)",
-      [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]],
+      'INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)',
+      [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, 'open', nextMonth.toISOString().split('T')[0]],
       (err) => {
-        if (err) console.error("Error initializing showdown tournament:", err);
+        if (err) console.error('Error initializing showdown tournament:', err);
       }
     );
   });
 
-  // Close database on process exit
-  process.on("SIGINT", () => {
+  process.on('SIGINT', () => {
     db.close((err) => {
       if (err) {
-        console.error("Error closing database:", err.message);
+        console.error('Error closing database:', err.message);
       }
-      console.log("Database connection closed.");
+      console.log('Database connection closed.');
       process.exit(0);
     });
   });
 
   return db;
-          }
+  }
