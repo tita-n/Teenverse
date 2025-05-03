@@ -9,6 +9,7 @@
     "moduleResolution": "node",
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "skipLibCheck": true, 
     "typeRoots": ["./backend/types", "./node_modules/@types"]
   },
   "include": ["backend/**/*", "types/**/*"],
