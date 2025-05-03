@@ -99,7 +99,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
         req.user = decoded;
 
         // Fetch user ID to include in req.user for endpoints that need it
-        db.get("SELECT id FROM users WHERE email = ?", [decoded.email], (err, row: any) => {
+        req.db.get("SELECT id FROM users WHERE email = ?", [decoded.email], (err, row: any) => {
             if (err) {
                 console.error(`[${new Date().toISOString()}] Error fetching user ID in authenticateToken:`, err);
                 return res.status(500).json({ message: "Internal server error" });
@@ -153,7 +153,7 @@ io.on('connection', (socket) => {
         const { battleId, voteFor } = data;
         try {
             const battle = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+               req.db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -161,14 +161,14 @@ io.on('connection', (socket) => {
 
             if (voteFor === "creator") {
                 await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
+                    req.db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
                         if (err) reject(err);
                         resolve();
                     });
                 });
             } else {
                 await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId], (err) => {
+                    req.db.run("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId], (err) => {
                         if (err) reject(err);
                         resolve();
                     });
@@ -176,7 +176,7 @@ io.on('connection', (socket) => {
             }
 
             const updatedBattle = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
+                req.db.get("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -209,7 +209,7 @@ app.get("/api/rants", authenticateToken, async (req, res) => {
         query += " ORDER BY created_at DESC";
 
         const rants: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(query, params, (err, rows) => {
+            req.db.all(query, params, (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
@@ -219,7 +219,7 @@ app.get("/api/rants", authenticateToken, async (req, res) => {
         const rantsWithComments = await Promise.all(
             rants.map(async (rant) => {
                 const comments = await new Promise<any[]>((resolve, reject) => {
-                    db.all(
+                    req.db.all(
                         "SELECT * FROM rant_comments WHERE rant_id = ? ORDER BY created_at ASC",
                         [rant.id],
                         (err, rows) => {
@@ -249,7 +249,7 @@ app.post("/api/create-rant", authenticateToken, async (req, res) => {
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
+            req.db.get("SELECT id, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -272,7 +272,7 @@ app.post("/api/create-rant", authenticateToken, async (req, res) => {
         }
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
+            req.db.run(
                 "INSERT INTO rants (content, category, ask_for_advice) VALUES (?, ?, ?)",
                 [content, category, askForAdvice ? 1 : 0],
                 (err) => {
@@ -293,7 +293,7 @@ app.post("/api/create-rant", authenticateToken, async (req, res) => {
         const newXP = user.xp + xpBonus;
         const newCoins = user.coins + coinBonus;
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
+            req.db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -315,7 +315,7 @@ app.post("/api/upvote-rant", authenticateToken, async (req, res) => {
         }
 
         const rant: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+            req.db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -324,7 +324,7 @@ app.post("/api/upvote-rant", authenticateToken, async (req, res) => {
         if (!rant) return res.status(404).json({ message: "Rant not found" });
 
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE rants SET upvotes = upvotes + 1 WHERE id = ?", [rantId], (err) => {
+            req.db.run("UPDATE rants SET upvotes = upvotes + 1 WHERE id = ?", [rantId], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -351,7 +351,7 @@ app.post("/api/react-to-rant", authenticateToken, async (req, res) => {
         }
 
         const rant: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT reactions FROM rants WHERE id = ?", [rantId], (err, row) => {
+            req.db.get("SELECT reactions FROM rants WHERE id = ?", [rantId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -371,7 +371,7 @@ app.post("/api/react-to-rant", authenticateToken, async (req, res) => {
         reactions[reaction] = (reactions[reaction] || 0) + 1;
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
+            req.db.run(
                 "UPDATE rants SET reactions = ? WHERE id = ?",
                 [JSON.stringify(reactions), rantId],
                 (err) => {
@@ -397,7 +397,7 @@ app.post("/api/send-hug", authenticateToken, async (req, res) => {
         }
 
         const rant: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+            req.db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -406,7 +406,7 @@ app.post("/api/send-hug", authenticateToken, async (req, res) => {
         if (!rant) return res.status(404).json({ message: "Rant not found" });
 
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE rants SET hugs = hugs + 1 WHERE id = ?", [rantId], (err) => {
+            req.db.run("UPDATE rants SET hugs = hugs + 1 WHERE id = ?", [rantId], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -428,7 +428,7 @@ app.post("/api/add-comment", authenticateToken, async (req, res) => {
         }
 
         const rant: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
+            req.db.get("SELECT id FROM rants WHERE id = ?", [rantId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -437,7 +437,7 @@ app.post("/api/add-comment", authenticateToken, async (req, res) => {
         if (!rant) return res.status(404).json({ message: "Rant not found" });
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
+            req.db.run(
                 "INSERT INTO rant_comments (rant_id, content) VALUES (?, ?)",
                 [rantId, content],
                 (err) => {
@@ -480,7 +480,7 @@ app.post("/api/register", async (req, res) => {
         }
 
         const existingUser: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT email, username FROM users WHERE email = ? OR username = ?", [email, username], (err, row) => {
+            req.db.get("SELECT email, username FROM users WHERE email = ? OR username = ?", [email, username], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -497,7 +497,7 @@ app.post("/api/register", async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         await new Promise<void>((resolve, reject) => {
-            db.run(
+            req.db.run(
                 "INSERT INTO users (email, username, password, dob, verified) VALUES (?, ?, ?, ?, ?)",
                 [email, username, hashedPassword, dob, 0],
                 (err) => {
@@ -519,7 +519,7 @@ app.post("/api/login", async (req, res) => {
     try {
         const { email, password } = req.body;
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT * FROM users WHERE email = ?", [email], (err, row) => {
+            req.db.get("SELECT * FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -541,7 +541,7 @@ app.post("/api/login", async (req, res) => {
 app.get("/api/users/me", authenticateToken, async (req: any, res) => {
     try {
         const user = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, email, username, creator_badge FROM users WHERE email = ?", [req.user.email], (err, row) => {
+            req.db.get("SELECT id, email, username, creator_badge FROM users WHERE email = ?", [req.user.email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -567,7 +567,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id, username, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
+            req.db.get("SELECT id, username, xp, coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -599,7 +599,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
 
         const newXP = user.xp + xpBonus;
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET xp = ? WHERE id = ?", [newXP, user.id], (err) => {
+            req.db.run("UPDATE users SET xp = ? WHERE id = ?", [newXP, user.id], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -607,7 +607,7 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
 
         const newCoins = user.coins + coinBonus;
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err) => {
+            req.db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -629,7 +629,7 @@ app.post("/api/get-coins", authenticateToken, async (req, res) => {
         }
 
         const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT coins FROM users WHERE email = ?", [email], (err, row) => {
+            req.db.get("SELECT coins FROM users WHERE email = ?", [email], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
