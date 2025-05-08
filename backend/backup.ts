@@ -5,21 +5,22 @@ import crypto from "crypto";
 import { Readable } from "stream";
 
 const dbPath = path.join(__dirname, "../users.db");
-const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS || "{}");
+const clientId = process.env.CLIENT_ID;
+const clientSecret = process.env.CLIENT_SECRET;
 const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 const fileId = process.env.GOOGLE_DRIVE_FILE_ID || "";
 
-// Set up OAuth2 client
-const auth = new google.auth.OAuth2(
-  credentials.client_id,
-  credentials.client_secret,
+// Configure OAuth2 client
+const oAuth2Client = new google.auth.OAuth2(
+  clientId,
+  clientSecret,
   "http://localhost" // Redirect URI (not used for refresh token flow)
 );
 if (refreshToken) {
-  auth.setCredentials({ refresh_token: refreshToken });
+  oAuth2Client.setCredentials({ refresh_token: refreshToken });
 }
 
-const drive = google.drive({ version: "v3", auth });
+const drive = google.drive({ version: "v3", auth: oAuth2Client });
 
 // Retry logic for network issues
 async function withRetry(fn: () => Promise<void>, retries = 3) {
@@ -53,8 +54,8 @@ export async function backupDatabase() {
     try {
       console.log(`[${new Date().toISOString()}] Starting backup...`);
       // Verify credentials
-      if (!credentials.client_id || !credentials.client_secret) {
-        throw new Error("Invalid GOOGLE_CREDENTIALS: missing client_id or client_secret");
+      if (!clientId || !clientSecret) {
+        throw new Error("Missing CLIENT_ID or CLIENT_SECRET");
       }
       if (!refreshToken) {
         throw new Error("Missing GOOGLE_REFRESH_TOKEN");
@@ -123,4 +124,4 @@ export async function restoreDatabase() {
       throw err;
     }
   });
-                }
+}
