@@ -17,6 +17,7 @@ import { FfprobeData } from 'fluent-ffmpeg';
 import fs from 'fs';
 import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
+import { backupDatabase } from "./backup";
 import settingsRouter from "./routes/settings"; // for settings 
 
 dotenv.config();
@@ -178,6 +179,16 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
     });
+});
+
+app.get("/trigger-backup", async (req, res) => {
+  try {
+    await backupDatabase();
+    res.send("Backup triggered successfully");
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Manual backup error:`, err);
+    res.status(500).send("Backup failed");
+  }
 });
 
 // Endpoint to fetch rants
