@@ -9,10 +9,15 @@ const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS || "{}");
 const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
 const fileId = process.env.GOOGLE_DRIVE_FILE_ID || "";
 
-const auth = new google.auth.GoogleAuth({
-  credentials,
-  scopes: ["https://www.googleapis.com/auth/drive.file"],
-});
+// Set up OAuth2 client
+const auth = new google.auth.OAuth2(
+  credentials.client_id,
+  credentials.client_secret,
+  "http://localhost" // Redirect URI (not used for refresh token flow)
+);
+if (refreshToken) {
+  auth.setCredentials({ refresh_token: refreshToken });
+}
 
 const drive = google.drive({ version: "v3", auth });
 
@@ -118,4 +123,4 @@ export async function restoreDatabase() {
       throw err;
     }
   });
-}
+                }
