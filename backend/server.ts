@@ -183,10 +183,16 @@ io.on('connection', (socket) => {
 
 app.get("/trigger-backup", async (req, res) => {
   try {
+    console.log(`[${new Date().toISOString()}] Triggering manual backup...`);
     await backupDatabase();
+    console.log(`[${new Date().toISOString()}] Manual backup successful`);
     res.send("Backup triggered successfully");
-  } catch (err) {
-    console.error(`[${new Date().toISOString()}] Manual backup error:`, err);
+  } catch (err: any) {
+    console.error(
+      `[${new Date().toISOString()}] Manual backup error:`,
+      err.message,
+      err.stack
+    );
     res.status(500).send("Backup failed");
   }
 });
