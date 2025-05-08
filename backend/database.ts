@@ -6,10 +6,13 @@ import { backupDatabase, restoreDatabase } from "./backup";
 const dbPath = path.join(__dirname, "../users.db");
 console.log(`[${new Date().toISOString()}] Database path: ${dbPath}`);
 
-// Restore database before connecting
+// Export db (initialized after restore)
+let db: sqlite3.Database;
+
+// Restore database and connect
 restoreDatabase().then(() => {
   console.log(`[${new Date().toISOString()}] Database restore attempted, proceeding with connection`);
-  export const db = new sqlite3.Database(dbPath, (err) => {
+  db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
       console.error(`[${new Date().toISOString()}] Error opening database:`, err.message);
     } else {
@@ -193,7 +196,7 @@ restoreDatabase().then(() => {
       )
     `);
 
-    // Team Members table for Hype Battles
+    // Team Members table for Gets Hype Battles
     db.run(`
       CREATE TABLE IF NOT EXISTS team_members (
         team_id INTEGER,
@@ -708,6 +711,9 @@ restoreDatabase().then(() => {
     );
   });
 });
+
+// Export db for other modules
+export { db };
 
 // Close database and backup on process exit
 process.on("SIGINT", async () => {
