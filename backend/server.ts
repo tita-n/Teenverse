@@ -182,8 +182,14 @@ io.on('connection', (socket) => {
 });
 
 app.get("/trigger-backup", async (req, res) => {
+  console.log(`[${new Date().toISOString()}] Entering trigger-backup endpoint`);
   try {
     console.log(`[${new Date().toISOString()}] Triggering manual backup...`);
+    console.log(`[${new Date().toISOString()}] Environment variables:`, {
+      CLIENT_ID: process.env.CLIENT_ID ? "set" : "unset",
+      CLIENT_SECRET: process.env.CLIENT_SECRET ? "set" : "unset",
+      GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN ? "set" : "unset",
+    });
     await backupDatabase();
     console.log(`[${new Date().toISOString()}] Manual backup successful`);
     res.send("Backup triggered successfully");
