@@ -1,4 +1,4 @@
-import B2 from "backblaze-b2";
+import B2 from "b2";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
@@ -18,20 +18,24 @@ if (!b2KeyId || !b2ApplicationKey) {
 }
 
 // Initialize Backblaze B2 client
-let b2;
-try {
-  b2 = new B2({
-    applicationKeyId: b2KeyId,
-    applicationKey: b2ApplicationKey,
-  });
-  await b2.authorize();
-  console.log(`[${new Date().toISOString()}] Backblaze B2 authorized`);
-} catch (err: any) {
-  console.error(
-    `[${new Date().toISOString()}] Backblaze B2 setup error:`,
-    err.message,
-    err.stack
-  );
+let b2: B2 | null = null;
+async function initB2() {
+  if (b2) return;
+  try {
+    b2 = new B2({
+      applicationKeyId: b2KeyId,
+      applicationKey: b2ApplicationKey,
+    });
+    await b2.authorize();
+    console.log(`[${new Date().toISOString()}] Backblaze B2 authorized`);
+  } catch (err: any) {
+    console.error(
+      `[${new Date().toISOString()}] Backblaze B2 setup error:`,
+      err.message,
+      err.stack
+    );
+    b2 = null;
+  }
 }
 
 // Retry logic for network issues
@@ -54,6 +58,7 @@ async function withRetry(fn: () => Promise<void>, retries = 3) {
 
 // Upload users.db to Backblaze B2
 export async function backupDatabase() {
+  await initB2();
   if (!b2) {
     throw new Error("Backblaze B2 not initialized due to invalid credentials");
   }
@@ -99,6 +104,7 @@ export async function backupDatabase() {
 
 // Restore users.db from Backblaze B2
 export async function restoreDatabase() {
+  await initB2();
   if (!b2) {
     console.log(
       `[${new Date().toISOString()}] Backblaze B2 not initialized, skipping restore`
