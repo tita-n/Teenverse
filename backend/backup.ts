@@ -1,4 +1,4 @@
-import B2 from "b2";
+import B2 from "backblaze-b2";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
@@ -8,7 +8,7 @@ console.log(`[${new Date().toISOString()}] Initializing backup module...`);
 const dbPath = path.join(__dirname, "../users.db");
 const b2KeyId = process.env.B2_KEY_ID;
 const b2ApplicationKey = process.env.B2_APPLICATION_KEY;
-const b2BucketName = process.env.B2_BUCKET_NAME || "Teenverse";
+const b2BucketName = process.env.B2_BUCKET_NAME || "teenverse-backups";
 
 // Validate credentials at module level
 if (!b2KeyId || !b2ApplicationKey) {
@@ -165,4 +165,4 @@ export async function localBackup() {
     );
     throw err;
   }
-  }
+}
