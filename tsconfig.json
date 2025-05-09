@@ -1,18 +1,16 @@
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "CommonJS",
-    "rootDir": "backend",
-    "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "strict": false,
-    "baseUrl": "./"
-  },
+"compilerOptions": {
+  "target": "ES2022",
+  "module": "NodeNext",
+  "rootDir": "backend",
+  "outDir": "dist",
+  "strict": true,
+  "esModuleInterop": true,
+  "skipLibCheck": true,
+  "forceConsistentCasingInFileNames": true,
+  "resolveJsonModule": true,
+  "moduleResolution": "node",
+  "baseUrl": "./"
+}
   "include": ["backend/**/*.ts"],
   "exclude": ["node_modules", "frontend"],
   "types": ["node", "sqlite3"]
