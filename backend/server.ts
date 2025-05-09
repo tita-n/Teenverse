@@ -17,7 +17,7 @@ import { FfprobeData } from 'fluent-ffmpeg';
 import fs from 'fs';
 import multer from 'multer';
 import dmRoutes from "./routes/dms"; // chats
-import { backupDatabase } from "./backup";
+import { backupDatabase, localBackup } from "./backup";
 import settingsRouter from "./routes/settings"; // for settings 
 
 dotenv.config();
@@ -181,16 +181,29 @@ io.on('connection', (socket) => {
     });
 });
 
+// Trigger backup endpoint
 app.get("/trigger-backup", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Entering trigger-backup endpoint`);
   try {
     console.log(`[${new Date().toISOString()}] Triggering manual backup...`);
     console.log(`[${new Date().toISOString()}] Environment variables:`, {
-      CLIENT_ID: process.env.CLIENT_ID ? "set" : "unset",
-      CLIENT_SECRET: process.env.CLIENT_SECRET ? "set" : "unset",
-      GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN ? "set" : "unset",
+      B2_KEY_ID: process.env.B2_KEY_ID ? "set" : "unset",
+      B2_APPLICATION_KEY: process.env.B2_APPLICATION_KEY ? "set" : "unset",
+      B2_BUCKET_NAME: process.env.B2_BUCKET_NAME ? "set" : "unset",
     });
-    await backupDatabase();
+    try {
+      await backupDatabase();
+      console.log(`[${new Date().toISOString()}] Backblaze B2 backup successful`);
+    } catch (b2Err: any) {
+      console.error(
+        `[${new Date().toISOString()}] Backblaze B2 backup failed:`,
+        b2Err.message,
+        b2Err.stack
+      );
+      console.log(`[${new Date().toISOString()}] Falling back to local backup...`);
+      await localBackup();
+      console.log(`[${new Date().toISOString()}] Local backup successful`);
+    }
     console.log(`[${new Date().toISOString()}] Manual backup successful`);
     res.send("Backup triggered successfully");
   } catch (err: any) {
