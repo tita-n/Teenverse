@@ -1,26 +1,38 @@
-import { google } from "googleapis";
+import B2 from "@backblaze/b2";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { Readable } from "stream";
+
+console.log(`[${new Date().toISOString()}] Initializing backup module...`);
 
 const dbPath = path.join(__dirname, "../users.db");
-const clientId = process.env.CLIENT_ID;
-const clientSecret = process.env.CLIENT_SECRET;
-const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-const fileId = process.env.GOOGLE_DRIVE_FILE_ID || "";
+const b2KeyId = process.env.B2_KEY_ID;
+const b2ApplicationKey = process.env.B2_APPLICATION_KEY;
+const b2BucketName = process.env.B2_BUCKET_NAME || "teenverse-backups";
 
-// Configure OAuth2 client
-const oAuth2Client = new google.auth.OAuth2(
-  clientId,
-  clientSecret,
-  "http://localhost" // Redirect URI (not used for refresh token flow)
-);
-if (refreshToken) {
-  oAuth2Client.setCredentials({ refresh_token: refreshToken });
+// Validate credentials at module level
+if (!b2KeyId || !b2ApplicationKey) {
+  console.error(
+    `[${new Date().toISOString()}] Backup module error: Missing B2_KEY_ID or B2_APPLICATION_KEY`
+  );
 }
 
-const drive = google.drive({ version: "v3", auth: oAuth2Client });
+// Initialize Backblaze B2 client
+let b2;
+try {
+  b2 = new B2({
+    applicationKeyId: b2KeyId,
+    applicationKey: b2ApplicationKey,
+  });
+  await b2.authorize();
+  console.log(`[${new Date().toISOString()}] Backblaze B2 authorized`);
+} catch (err: any) {
+  console.error(
+    `[${new Date().toISOString()}] Backblaze B2 setup error:`,
+    err.message,
+    err.stack
+  );
+}
 
 // Retry logic for network issues
 async function withRetry(fn: () => Promise<void>, retries = 3) {
@@ -40,25 +52,17 @@ async function withRetry(fn: () => Promise<void>, retries = 3) {
   }
 }
 
-// Buffer to readable stream
-function bufferToStream(buffer: Buffer): Readable {
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null);
-  return stream;
-}
-
-// Upload users.db to Google Drive
+// Upload users.db to Backblaze B2
 export async function backupDatabase() {
+  if (!b2) {
+    throw new Error("Backblaze B2 not initialized due to invalid credentials");
+  }
   await withRetry(async () => {
     try {
-      console.log(`[${new Date().toISOString()}] Starting backup...`);
+      console.log(`[${new Date().toISOString()}] Starting B2 backup...`);
       // Verify credentials
-      if (!clientId || !clientSecret) {
-        throw new Error("Missing CLIENT_ID or CLIENT_SECRET");
-      }
-      if (!refreshToken) {
-        throw new Error("Missing GOOGLE_REFRESH_TOKEN");
+      if (!b2KeyId || !b2ApplicationKey) {
+        throw new Error("Missing B2_KEY_ID or B2_APPLICATION_KEY");
       }
       // Read database file for checksum
       const fileData = await fs.readFile(dbPath).catch((err) => {
@@ -66,29 +70,25 @@ export async function backupDatabase() {
       });
       const checksum = crypto.createHash("sha256").update(fileData).digest("hex");
       console.log(`[${new Date().toISOString()}] Backup checksum: ${checksum}`);
-      const fileMetadata = { name: "users.db" };
-      const media = { mimeType: "application/x-sqlite3", body: bufferToStream(fileData) };
-      let response;
-      if (fileId) {
-        console.log(`[${new Date().toISOString()}] Updating existing file: ${fileId}`);
-        response = await drive.files.update({
-          fileId,
-          media,
-          fields: "id",
-        });
-      } else {
-        console.log(`[${new Date().toISOString()}] Creating new file`);
-        response = await drive.files.create({
-          requestBody: fileMetadata,
-          media,
-          fields: "id",
-        });
-        console.log(`[${new Date().toISOString()}] New File ID: ${response.data.id}`);
-      }
-      console.log(`[${new Date().toISOString()}] Database backed up to Google Drive`);
+      // Get bucket info
+      const bucketResponse = await b2.getBucket({ bucketName: b2BucketName });
+      const bucketId = bucketResponse.data.buckets[0].bucketId;
+      // Upload file
+      const uploadUrlResponse = await b2.getUploadUrl({ bucketId });
+      const uploadUrl = uploadUrlResponse.data.uploadUrl;
+      const uploadAuthToken = uploadUrlResponse.data.authorizationToken;
+      const fileName = `users.db`;
+      await b2.uploadFile({
+        uploadUrl,
+        uploadAuthToken,
+        fileName,
+        data: fileData,
+        mime: "application/x-sqlite3",
+      });
+      console.log(`[${new Date().toISOString()}] Database backed up to Backblaze B2`);
     } catch (err: any) {
       console.error(
-        `[${new Date().toISOString()}] Backup error:`,
+        `[${new Date().toISOString()}] B2 backup error:`,
         err.message,
         err.stack
       );
@@ -97,31 +97,72 @@ export async function backupDatabase() {
   });
 }
 
-// Restore users.db from Google Drive
+// Restore users.db from Backblaze B2
 export async function restoreDatabase() {
-  if (!fileId) {
-    console.log(`[${new Date().toISOString()}] No backup file ID set, skipping restore`);
+  if (!b2) {
+    console.log(
+      `[${new Date().toISOString()}] Backblaze B2 not initialized, skipping restore`
+    );
     return;
   }
   await withRetry(async () => {
     try {
-      console.log(`[${new Date().toISOString()}] Starting restore for file: ${fileId}`);
-      const response = await drive.files.get(
-        { fileId, alt: "media" },
-        { responseType: "arraybuffer" }
-      );
-      const fileData = Buffer.from(response.data as ArrayBuffer);
+      console.log(`[${new Date().toISOString()}] Starting B2 restore...`);
+      // Get bucket info
+      const bucketResponse = await b2.getBucket({ bucketName: b2BucketName });
+      const bucketId = bucketResponse.data.buckets[0].bucketId;
+      // List files to find users.db
+      const fileListResponse = await b2.listFileNames({
+        bucketId,
+        startFileName: "users.db",
+        maxFileCount: 1,
+      });
+      const file = fileListResponse.data.files.find((f: any) => f.fileName === "users.db");
+      if (!file) {
+        console.log(
+          `[${new Date().toISOString()}] No users.db found in B2 bucket, skipping restore`
+        );
+        return;
+      }
+      // Download file
+      const downloadResponse = await b2.downloadFileByName({
+        bucketName: b2BucketName,
+        fileName: "users.db",
+        responseType: "arraybuffer",
+      });
+      const fileData = Buffer.from(downloadResponse.data);
       const checksum = crypto.createHash("sha256").update(fileData).digest("hex");
       console.log(`[${new Date().toISOString()}] Restore checksum: ${checksum}`);
       await fs.writeFile(dbPath, fileData);
-      console.log(`[${new Date().toISOString()}] Database restored from Google Drive`);
+      console.log(`[${new Date().toISOString()}] Database restored from Backblaze B2`);
     } catch (err: any) {
       console.error(
-        `[${new Date().toISOString()}] Restore error:`,
+        `[${new Date().toISOString()}] B2 restore error:`,
         err.message,
         err.stack
       );
       throw err;
     }
   });
+}
+
+// Local backup to Render disk
+export async function localBackup() {
+  try {
+    console.log(`[${new Date().toISOString()}] Starting local backup...`);
+    const fileData = await fs.readFile(dbPath);
+    const checksum = crypto.createHash("sha256").update(fileData).digest("hex");
+    const backupPath = path.join(__dirname, `../users-backup-${Date.now()}.db`);
+    await fs.writeFile(backupPath, fileData);
+    console.log(
+      `[${new Date().toISOString()}] Local backup saved: ${backupPath}, checksum: ${checksum}`
+    );
+  } catch (err: any) {
+    console.error(
+      `[${new Date().toISOString()}] Local backup error:`,
+      err.message,
+      err.stack
+    );
+    throw err;
+  }
 }
