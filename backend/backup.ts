@@ -1,4 +1,4 @@
-import B2 from "b2";
+import B2 from "backblaze-b2";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
