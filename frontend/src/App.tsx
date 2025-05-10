@@ -50,7 +50,7 @@ export default function App() {
                         <Route path="/chats" element={<ChatList />} />
                         <Route path="/titan" element={<Titan />} />
                         <Route path="/chat/:conversationId" element={<ChatDetail />} />
-                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                         <Route path="*" element={<div>404 - Page Not Found</div>} />
                     </Routes>
                 </Router>
