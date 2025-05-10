@@ -26,7 +26,7 @@ restoreDatabase().then(() => {
   });
 
   // Periodic backup every 5 minutes
-  setInterval(backupDatabase, 5 * 60 * 1000);
+  setInterval(backupDatabase, 1440 * 60 * 1000);
 
   // Create tables if they don't exist (your original schema)
   db.serialize(() => {
