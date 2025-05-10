@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import RantZone from "./pages/RantZone";
 import GameSquad from "./pages/GameSquad";
 import SquadDetails from "./pages/SquadDetails";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import Profile from "./pages/Profile";
 import ControlPanel from "./pages/ControlPanel";
 import NewsFeed from "./pages/NewsFeed";
