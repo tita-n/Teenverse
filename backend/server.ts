@@ -112,6 +112,51 @@ const routeDependencies: RouteDependencies = {
     db,
     SECRET_KEY
 };
+
+// Global request logging
+console.log(`[${new Date().toISOString()}] Server starting...`);
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
+  next();
+});
+
+// Debug endpoint
+app.get("/debug-users", async (req, res) => {
+  try {
+    console.log(`[${new Date().toISOString()}] Checking db state...`);
+    if (!db) {
+      console.error(`[${new Date().toISOString()}] Error: db is undefined`);
+      return res.status(500).send("Database not initialized");
+    }
+
+    console.log(`[${new Date().toISOString()}] Fetching users table schema...`);
+    const schema = await new Promise((resolve, reject) => {
+      db.all("PRAGMA table_info(users)", (err, rows) => {
+        if (err) reject(err);
+        resolve(rows);
+      });
+    });
+    console.log(`[${new Date().toISOString()}] Users table schema:`, schema);
+
+    console.log(`[${new Date().toISOString()}] Fetching users table contents...`);
+    const users = await new Promise((resolve, reject) => {
+      db.all("SELECT id, email, username, dob, creator_badge FROM users", (err, rows) => {
+        if (err) reject(err);
+        resolve(rows);
+      });
+    });
+    console.log(`[${new Date().toISOString()}] Users table contents:`, users);
+
+    res.send("Debug info logged");
+  } catch (err) {
+    console.error(
+      `[${new Date().toISOString()}] Debug users error:`,
+      err.message,
+      err.stack
+    );
+    res.status(500).send("Error fetching debug info");
+  }
+});
  
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
