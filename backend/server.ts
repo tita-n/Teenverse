@@ -157,6 +157,26 @@ app.get("/debug-users", async (req, res) => {
     res.status(500).send("Error fetching debug info");
   }
 });
+
+app.get("/clear-users", async (req, res) => {
+  try {
+    await new Promise((resolve, reject) => {
+      db.run("DELETE FROM users", (err) => {
+        if (err) reject(err);
+        resolve();
+      });
+    });
+    console.log(`[${new Date().toISOString()}] Users table cleared`);
+    res.send("Users table cleared");
+  } catch (err) {
+    console.error(
+      `[${new Date().toISOString()}] Clear users error:`,
+      err.message,
+      err.stack
+    );
+    res.status(500).send("Error clearing users");
+  }
+});
  
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
