@@ -160,7 +160,7 @@ app.get("/debug-users", async (req, res) => {
 
 app.get("/clear-users", async (req, res) => {
   try {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       db.run("DELETE FROM users", (err) => {
         if (err) reject(err);
         resolve();
