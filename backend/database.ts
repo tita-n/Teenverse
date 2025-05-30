@@ -698,6 +698,8 @@ setTimeout(backupDatabase, 5 * 60 * 1000);
       }
     );
 
+    // ... (previous code remains unchanged)
+
     // Initial setup for the next Ultimate Showdown
     const nextMonth = new Date();
     nextMonth.setMonth(nextMonth.getMonth() + 1);
@@ -709,8 +711,7 @@ setTimeout(backupDatabase, 5 * 60 * 1000);
         if (err) console.error(`[${new Date().toISOString()}] Error initializing showdown tournament:`, err);
       }
     );
-  });
-});
+  }); // Close db.serialize block
 
 // Export db for other modules
 export { db };
