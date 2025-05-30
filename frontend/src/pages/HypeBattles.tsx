@@ -11,7 +11,7 @@ interface Battle {
     id: number;
     user_id: number;
     username: string;
-    actual_username: string;
+    actual_username: string; // Opponent's username
     opponent_id: number | null;
     team_id: number | null;
     opponent_team_id: number | null;
@@ -267,7 +267,7 @@ export default function HypeBattles() {
             });
             setFormData({ ...formData, content: '', mediaFile: null });
             setMediaPreview(null);
-            setMessage(res.data.message);
+            setMessage(res.data.message | 'Response submitted successfully!');
             const battlesRes = await axios.get('/api/hype-battles', {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -633,7 +633,7 @@ export default function HypeBattles() {
                                                 )}
                                             </div>
                                             {/* Opponent's Side */}
-                                            {battle.opponent_id && (
+                                            {battle.opponent_id ? (
                                                 <div className="relative">
                                                     {battle.is_live && (
                                                         <span className="absolute top-0 left-0 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded animate-pulse">
@@ -642,7 +642,7 @@ export default function HypeBattles() {
                                                     )}
                                                     <p className="text-gray-800 font-semibold flex items-center">
                                                         <span className={battle.opponent_id === user.id ? 'text-purple-600' : ''}>
-                                                            {battle.actual_username} (Opponent)
+                                                            {battle.actual_username}
                                                         </span>
                                                         {battle.opponent_team_id && (
                                                             <span className="ml-2 text-sm text-gray-500">
@@ -658,15 +658,19 @@ export default function HypeBattles() {
                                                             aria-label={`${battle.actual_username}'s response video`}
                                                         />
                                                     ) : (
-                                                        <p className="text-gray-600">Awaiting opponent response...</p>
+                                                        <p className="text-gray-600">Awaiting {battle.actual_username}'s response...</p>
                                                     )}
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <p className="text-gray-600">No opponent yet</p>
                                                 </div>
                                             )}
                                         </div>
                                         <div className="mt-4 flex items-center justify-between">
                                             <div>
                                                 <p className="text-gray-600">
-                                                    Votes: {battle.votes} | Opponent Votes: {battle.opponent_votes}
+                                                    Votes: {battle.votes} | {battle.opponent_id ? `${battle.actual_username}'s Votes` : 'Opponent Votes'}: {battle.opponent_votes}
                                                 </p>
                                                 <p className="text-gray-500 text-sm flex items-center">
                                                     <ClockIcon className="w-4 h-4 mr-1" />
@@ -694,7 +698,7 @@ export default function HypeBattles() {
                                                         className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition"
                                                         disabled={new Date(battle.voting_deadline) < new Date()}
                                                     >
-                                                        Vote for Opponent
+                                                        Vote for {battle.actual_username}
                                                     </motion.button>
                                                 )}
                                             </div>
@@ -706,7 +710,7 @@ export default function HypeBattles() {
                                                 className="mt-6 p-4 bg-gray-50 rounded-lg"
                                             >
                                                 <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                                    Respond to Challenge
+                                                    Respond to {battle.username}'s Challenge
                                                 </h3>
                                                 <textarea
                                                     name="content"
