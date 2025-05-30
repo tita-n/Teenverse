@@ -714,7 +714,7 @@ setTimeout(backupDatabase, 5 * 60 * 1000);
   }); // Close db.serialize block
 
 // Export db for other modules
-export { db };
+// export { db };
 
 // Close database and backup on process exit
 process.on("SIGINT", async () => {
