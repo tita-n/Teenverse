@@ -709,3 +709,20 @@ setTimeout(backupDatabase, 5 * 60 * 1000);
         if (err) console.error(`[${new Date().toISOString()}] Error initializing showdown tournament:`, err);
       }
     );
+  });
+});
+
+// Export db for other modules
+export { db };
+
+// Close database and backup on process exit
+process.on("SIGINT", async () => {
+  await backupDatabase();
+  db.close((err) => {
+    if (err) {
+      console.error(`[${new Date().toISOString()}] Error closing database:`, err.message);
+    }
+    console.log(`[${new Date().toISOString()}] Database connection closed.`);
+    process.exit(0);
+  });
+});
