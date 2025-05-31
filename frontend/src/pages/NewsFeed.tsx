@@ -676,283 +676,293 @@ export default function NewsFeed() {
                                     <p className="text-gray-400 text-sm mt-1 dark:text-gray-500">
                                         {new Date(hotPost.created_at).toLocaleString()}
                                     </p>
-                 <div className="space-y-6">
-  <AnimatePresence>
-    {filteredPosts.length > 0 ? (
-      filteredPosts.map((post, index) => (
-        <motion.div
-          key={post.id}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          ref={index === filteredPosts.length - 1 ? lastPostElementRef : null}
-          className="bg-white bg-opacity-20 backdrop-blur-lg rounded-2xl shadow-xl p-6 dark:bg-gray-800 dark:bg-opacity-20"
-        >
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <Link to={`/profile/${post.username}`}>
-                <p className="font-semibold text-white inline-flex items-center dark:text-gray-200">
-                  {post.username}{" "}
-                  {post.verified ? (
-                    <span className="ml-1 inline-block bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-full h-5 w-5 text-center leading-5 text-xs animate-pulse">
-                      ✓
-                    </span>
-                  ) : null}
-                </p>
-              </Link>
-              {editingPost === post.id ? (
-                <div className="mt-2">
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-                    aria-label="Edit post content"
-                  />
-                  <div className="flex space-x-2 mt-2">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => handleEdit(post.id)}
-                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-                    >
-                      Save
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setEditingPost(null)}
-                      className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
-                    >
-                      Cancel
-                    </motion.button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <p className="text-gray-200 whitespace-pre-wrap mt-1 dark:text-gray-300">
-                    {post.content}
-                  </p>
-                  {post.media_url && (
-                    <div className="mt-2">
-                      {post.media_type === "video" ? (
-                        <video
-                          src={post.media_url}
-                          controls
-                          className="w-full max-w-md rounded-lg"
-                          aria-label={`${post.username}'s video`}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <img
-                          src={post.media_url}
-                          alt={`${post.username}'s image`}
-                          className="w-full max-w-md rounded-lg"
-                          loading="lazy"
-                        />
-                      )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+
+                    <div className="space-y-6">
+                        <AnimatePresence>
+                            {filteredPosts.length > 0 ? (
+                                filteredPosts.map((post, index) => (
+                                    <motion.div
+                                        key={post.id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0 }}
+                                        ref={index === filteredPosts.length - 1 ? lastPostElementRef : null}
+                                        className="bg-white bg-opacity-20 backdrop-blur-lg rounded-2xl shadow-xl p-6 dark:bg-gray-800 dark:bg-opacity-20"
+                                    >
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex-1">
+                                                <Link to={`/profile/${post.username}`}>
+                                                    <p className="font-semibold text-white inline-flex items-center dark:text-gray-200">
+                                                        {post.username}{" "}
+                                                        {post.verified ? (
+                                                            <span className="ml-1 inline-block bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-full h-5 w-5 text-center leading-5 text-xs animate-pulse">
+                                                                ✓
+                                                            </span>
+                                                        ) : null}
+                                                    </p>
+                                                </Link>
+                                                {editingPost === post.id ? (
+                                                    <div className="mt-2">
+                                                        <textarea
+                                                            value={editContent}
+                                                            onChange={(e) => setEditContent(e.target.value)}
+                                                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                                                            aria-label="Edit post content"
+                                                        />
+                                                        <div className="flex space-x-2 mt-2">
+                                                            <motion.button
+                                                                whileHover={{ scale: 1.05 }}
+                                                                whileTap={{ scale: 0.95 }}
+                                                                onClick={() => handleEdit(post.id)}
+                                                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                                                            >
+                                                                Save
+                                                            </motion.button>
+                                                            <motion.button
+                                                                whileHover={{ scale: 1.05 }}
+                                                                whileTap={{ scale: 0.95 }}
+                                                                onClick={() => setEditingPost(null)}
+                                                                className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+                                                            >
+                                                                Cancel
+                                                            </motion.button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <p className="text-gray-200 whitespace-pre-wrap mt-1 dark:text-gray-300">
+                                                            {post.content}
+                                                        </p>
+                                                        {post.media_url && (
+                                                            <div className="mt-2">
+                                                                {post.media_type === "video" ? (
+                                                                    <video
+                                                                        src={post.media_url}
+                                                                        controls
+                                                                        className="w-full max-w-md rounded-lg"
+                                                                        aria-label={`${post.username}'s video`}
+                                                                        loading="lazy"
+                                                                    />
+                                                                ) : (
+                                                                    <img
+                                                                        src={post.media_url}
+                                                                        alt={`${post.username}'s image`}
+                                                                        className="w-full max-w-md rounded-lg"
+                                                                        loading="lazy"
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        <p className="text-gray-400 text-sm mt-1 dark:text-gray-500">
+                                                            {new Date(post.created_at).toLocaleString()}
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </div>
+                                            {post.user_id === user.id && (
+                                                <div className="relative">
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.05 }}
+                                                        onClick={() => setShowMenu(post.id === showMenu ? null : post.id)}
+                                                        className="text-gray-200 hover:text-white dark:text-gray-400 dark:hover:text-gray-200"
+                                                    >
+                                                        <MoreHorizontalIcon className="w-5 h-5" />
+                                                    </motion.button>
+                                                    {showMenu === post.id && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, scale: 0.95 }}
+                                                            animate={{ opacity: 1, scale: 1 }}
+                                                            className="absolute right-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
+                                                        >
+                                                            <button
+                                                                onClick={() => startEditing(post)}
+                                                                className="block text-gray-200 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:text-gray-300 dark:hover:bg-gray-700"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(post.id)}
+                                                                className="block text-red-600 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:hover:bg-gray-700"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </motion.div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center justify-between mt-3 border-t border-gray-200 border-opacity-20 pt-2">
+                                            <div className="flex items-center space-x-4">
+                                                <motion.button
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => handleLike(post.id)}
+                                                    className="text-blue-400 hover:text-blue-600 flex items-center dark:text-blue-300 dark:hover:text-blue-500"
+                                                >
+                                                    <ThumbsUpIcon className="w-5 h-5 mr-1" />
+                                                    {post.likes || 0}
+                                                </motion.button>
+                                                <div className="relative">
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.1 }}
+                                                        whileTap={{ scale: 0.9 }}
+                                                        onClick={() => setShowReactions(post.id === showReactions ? null : post.id)}
+                                                        className="text-yellow-400 hover:text-yellow-600 flex items-center dark:text-yellow-300 dark:hover:text-yellow-500"
+                                                    >
+                                                        <StarIcon className="w-5 h-5 mr-1" />
+                                                        React
+                                                    </motion.button>
+                                                    {showReactions === post.id && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, y: 10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            className="absolute left-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 flex flex-wrap gap-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
+                                                        >
+                                                            {reactionsList.map((reaction) => (
+                                                                <motion.button
+                                                                    key={reaction}
+                                                                    whileHover={{ scale: 1.2 }}
+                                                                    onClick={() => handleReact(post.id, reaction)}
+                                                                    className="text-2xl"
+                                                                    title={reaction}
+                                                                >
+                                                                    {reactionEmojis[reaction]}
+                                                                </motion.button>
+                                                            ))}
+                                                        </motion.div>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    {Object.entries(post.reactions).map(([reaction, users]) =>
+                                                        users.length > 0 && (
+                                                            <span key={reaction} className="text-sm text-gray-200 dark:text-gray-400">
+                                                                {reactionEmojis[reaction]} {users.length}
+                                                            </span>
+                                                        )
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <motion.button
+                                                whileHover={{ scale: 1.05 }}
+                                                onClick={() => toggleComments(post.id)}
+                                                className="text-indigo-400 hover:text-indigo-600 text-sm flex items-center dark:text-indigo-300 dark:hover:text-indigo-500"
+                                            >
+                                                <MessageCircleIcon className="w-5 h-5 mr-1" />
+                                                {showComments[post.id]
+                                                    ? "Hide comments"
+                                                    : `Comments (${comments[post.id]?.length || 0})`}
+                                            </motion.button>
+                                        </div>
+
+                                        {showComments[post.id] && (
+                                            <div className="mt-4">
+                                                {comments[post.id]?.length > 0 ? (
+                                                    <>
+                                                        {comments[post.id]
+                                                            .sort((a, b) => b.pinned - a.pinned)
+                                                            .slice(0, visibleComments[post.id])
+                                                            .map((comment) => (
+                                                                <Comment
+                                                                    key={comment.id}
+                                                                    comment={comment}
+                                                                    postId={post.id}
+                                                                    user={user}
+                                                                    token={token}
+                                                                    onCommentLike={handleCommentLike}
+                                                                    onPinComment={handlePinComment}
+                                                                    onReply={handleReply}
+                                                                />
+                                                            ))}
+                                                        {comments[post.id].length > visibleComments[post.id] && (
+                                                            <motion.button
+                                                                whileHover={{ scale: 1.05 }}
+                                                                onClick={() => loadMoreComments(post.id)}
+                                                                className="text-indigo-400 hover:text-indigo-600 text-sm mt-2 dark:text-indigo-300 dark:hover:text-indigo-500"
+                                                            >
+                                                                View more comments
+                                                            </motion.button>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <p className="text-gray-400 text-sm dark:text-gray-500">
+                                                        No comments yet.
+                                                    </p>
+                                                )}
+
+                                                <div className="mt-4">
+                                                    <textarea
+                                                        value={commentContent[post.id] || ""}
+                                                        onChange={(e) =>
+                                                            setCommentContent({
+                                                                ...commentContent,
+                                                                [post.id]: e.target.value,
+                                                            })
+                                                        }
+                                                        placeholder="Add a comment..."
+                                                        className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                                                        rows={2}
+                                                        aria-label="Comment input"
+                                                    />
+                                                    <motion.button
+                                                        whileHover={{ scale: 1.05 }}
+                                                        whileTap={{ scale: 0.95 }}
+                                                        onClick={() => handleComment(post.id)}
+                                                        className="mt-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-pink-600 transition"
+                                                    >
+                                                        Comment
+                                                    </motion.button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-3">
+                                            <select
+                                                onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
+                                                className="border rounded-lg p-1 text-sm text-gray-200 bg-white bg-opacity-20 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                                                defaultValue=""
+                                                aria-label="Share to squad"
+                                            >
+                                                <option value="" disabled>
+                                                    Share to Squad
+                                                </option>
+                                                {squads.map((squad) => (
+                                                    <option key={squad.id} value={squad.id}>
+                                                        {squad.game_name} - {squad.description}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </motion.div>
+                                ))
+                            ) : (
+                                <p className="text-gray-200 text-center dark:text-gray-400">
+                                    No posts yet. Share your vibe!
+                                </p>
+                            )}
+                        </AnimatePresence>
+                        {loading && (
+                            <div className="text-center text-gray-200 dark:text-gray-400">
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ repeat: Infinity, duration: 1 }}
+                                    className="inline-block w-6 h-6 border-2 border-t-transparent border-gray-200 rounded-full"
+                                />
+                                <p>Loading...</p>
+                            </div>
+                        )}
+                        {!hasMore && filteredPosts.length > 0 && (
+                            <p className="text-center text-gray-200 dark:text-gray-400">
+                                No more posts to load.
+                            </p>
+                        )}
                     </div>
-                  )}
-                  <p className="text-gray-400 text-sm mt-1 dark:text-gray-500">
-                    {new Date(post.created_at).toLocaleString()}
-                  </p>
-                </>
-              )}
-            </div>
-            {post.user_id === user.id && (
-              <div className="relative">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  onClick={() => setShowMenu(post.id === showMenu ? null : post.id)}
-                  className="text-gray-200 hover:text-white dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <MoreHorizontalIcon className="w-5 h-5" />
-                </motion.button>
-                {showMenu === post.id && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="absolute right-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
-                  >
-                    <button
-                      onClick={() => startEditing(post)}
-                      className="block text-gray-200 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:text-gray-300 dark:hover:bg-gray-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(post.id)}
-                      className="block text-red-600 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:hover:bg-gray-700"
-                    >
-                      Delete
-                    </button>
-                  </motion.div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between mt-3 border-t border-gray-200 border-opacity-20 pt-2">
-            <div className="flex items-center space-x-4">
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => handleLike(post.id)}
-                className="text-blue-400 hover:text-blue-600 flex items-center dark:text-blue-300 dark:hover:text-blue-500"
-              >
-                <ThumbsUpIcon className="w-5 h-5 mr-1" />
-                {post.likes || 0}
-              </motion.button>
-              <div className="relative">
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setShowReactions(post.id === showReactions ? null : post.id)}
-                  className="text-yellow-400 hover:text-yellow-600 flex items-center dark:text-yellow-300 dark:hover:text-yellow-500"
-                >
-                  <StarIcon className="w-5 h-5 mr-1" />
-                  React
-                </motion.button>
-                {showReactions === post.id && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="absolute left-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 flex flex-wrap gap-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
-                  >
-                    {reactionsList.map((reaction) => (
-                      <motion.button
-                        key={reaction}
-                        whileHover={{ scale: 1.2 }}
-                        onClick={() => handleReact(post.id, reaction)}
-                        className="text-2xl"
-                        title={reaction}
-                      >
-                        {reactionEmojis[reaction]}
-                      </motion.button>
-                    ))}
-                  </motion.div>
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                {Object.entries(post.reactions).map(([reaction, users]) =>
-                  users.length > 0 && (
-                    <span key={reaction} className="text-sm text-gray-200 dark:text-gray-400">
-                      {reactionEmojis[reaction]} {users.length}
-                    </span>
-                  )
-                )}
-              </div>
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              onClick={() => toggleComments(post.id)}
-              className="text-indigo-400 hover:text-indigo-600 text-sm flex items-center dark:text-indigo-300 dark:hover:text-indigo-500"
-            >
-              <MessageCircleIcon className="w-5 h-5 mr-1" />
-              {showComments[post.id]
-                ? "Hide comments"
-                : `Comments (${comments[post.id]?.length || 0})`}
-            </motion.button>
-          </div>
-
-          {showComments[post.id] && (
-            <div className="mt-4">
-              {comments[post.id]?.length > 0 ? (
-                <>
-                  {comments[post.id]
-                    .sort((a, b) => b.pinned - a.pinned)
-                    .slice(0, visibleComments[post.id])
-                    .map((comment) => (
-                      <Comment
-                        key={comment.id}
-                        comment={comment}
-                        postId={post.id}
-                        user={user}
-                        token={token}
-                        onCommentLike={handleCommentLike}
-                        onPinComment={handlePinComment}
-                        onReply={handleReply}
-                      />
-                    ))}
-                  {comments[post.id].length > visibleComments[post.id] && (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      onClick={() => loadMoreComments(post.id)}
-                      className="text-indigo-400 hover:text-indigo-600 text-sm mt-2 dark:text-indigo-300 dark:hover:text-indigo-500"
-                    >
-                      View more comments
-                    </motion.button>
-                  )}
-                </>
-              ) : (
-                <p className="text-gray-400 text-sm dark:text-gray-500">
-                  No comments yet.
-                </p>
-              )}
-
-              <div className="mt-4">
-                <textarea
-                  value={commentContent[post.id] || ""}
-                  onChange={(e) =>
-                    setCommentContent({
-                      ...commentContent,
-                      [post.id]: e.target.value,
-                    })
-                  }
-                  placeholder="Add a comment..."
-                  className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-                  rows={2}
-                  aria-label="Comment input"
-                />
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => handleComment(post.id)}
-                  className="mt-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-pink-600 transition"
-                >
-                  Comment
-                </motion.button>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-3">
-            <select
-              onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
-              className="border rounded-lg p-1 text-sm text-gray-200 bg-white bg-opacity-20 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
-              defaultValue=""
-              aria-label="Share to squad"
-            >
-              <option value="" disabled>
-                Share to Squad
-              </option>
-              {squads.map((squad) => (
-                <option key={squad.id} value={squad.id}>
-                  {squad.game_name} - {squad.description}
-                </option>
-              ))}
-            </select>
-          </div>
-        </motion.div>
-      ))
-    ) : (
-      <p className="text-gray-200 text-center dark:text-gray-400">
-        No posts yet. Share your vibe!
-      </p>
-    )}
-  </AnimatePresence>
-  {loading && (
-    <div className="text-center text-gray-200 dark:text-gray-400">
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ repeat: Infinity, duration: 1 }}
-        className="inline-block w-6 h-6 border-2 border-t-transparent border-gray-200 rounded-full"
-      />
-      <p>Loading...</p>
-    </div>
-  )}
-  {!hasMore && filteredPosts.length > 0 && (
-    <p className="text-center text-gray-200 dark:text-gray-400">
-      No more posts to load.
-    </p>
-  )}
-</div>
+                </div>
+            </motion.div>
+        </div>
+    );
+    }
