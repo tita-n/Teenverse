@@ -4,12 +4,6 @@ import { useAuth } from "../hooks/useAuth";
 import Navigation from "../components/Navigation";
 import Comment from "../components/Comment";
 import { Link } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircleIcon, ThumbsUpIcon, ShareIcon, MoreHorizontalIcon, UploadIcon, StarIcon } from "lucide-react";
-import Confetti from "react-confetti";
-import { useDropzone } from "react-dropzone";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 
 interface Post {
     id: number;
@@ -21,8 +15,6 @@ interface Post {
     user_id: number;
     verified?: number;
     likes: number;
-    media_url?: string | null;
-    media_type?: string | null;
 }
 
 interface CommentType {
@@ -52,35 +44,14 @@ interface Squad {
     description: string;
 }
 
-interface UserStats {
-    postCount: number;
-    likeCount: number;
-    squadCount: number;
-}
-
-const reactionEmojis: { [key: string]: string } = {
-    Deadass: "💯",
-    "Big Mood": "😎",
-    Mid: "😐",
-    Facts: "✅",
-    Cap: "🙅‍♂️",
-    Slay: "🔥",
-    "No Cap": "🙌",
-    Vibes: "✨",
-    Bet: "🤝",
-    L: "😞",
-    W: "🏆",
-};
-
 export default function Dashboard() {
     const [content, setContent] = useState("");
-    const [mediaFile, setMediaFile] = useState<File | null>(null);
-    const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+    const [message, setMessage] = useState("");
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
-    const limit = 10;
+    const limit = 10; // Matches backend default
     const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
     const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
     const [showComments, setShowComments] = useState<{ [postId: number]: boolean }>({});
@@ -90,9 +61,6 @@ export default function Dashboard() {
     const [editContent, setEditContent] = useState("");
     const [squads, setSquads] = useState<Squad[]>([]);
     const [showMenu, setShowMenu] = useState<number | null>(null);
-    const [showConfetti, setShowConfetti] = useState(false);
-    const [userStats, setUserStats] = useState<UserStats>({ postCount: 0, likeCount: 0, squadCount: 0 });
-    const [darkMode, setDarkMode] = useState(localStorage.getItem("darkMode") === "true");
     const { user, token } = useAuth();
 
     const observer = useRef<IntersectionObserver | null>(null);
@@ -110,62 +78,51 @@ export default function Dashboard() {
         [loading, hasMore]
     );
 
-    const reactionsList = Object.keys(reactionEmojis);
+    const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
     const commentsPerPage = 3;
 
-    // Toggle dark mode
-    useEffect(() => {
-        localStorage.setItem("darkMode", darkMode.toString());
-        document.documentElement.classList.toggle("dark", darkMode);
-    }, [darkMode]);
-
-    // Clean up media preview
-    useEffect(() => {
-        return () => {
-            if (mediaPreview) URL.revokeObjectURL(mediaPreview);
-        };
-    }, [mediaPreview]);
-
-    // Fetch posts
     const fetchPosts = useCallback(async () => {
-        if (!user || !token || !hasMore) return;
-        try {
-            setLoading(true);
-            const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const postsData = res.data.map((post: Post) => ({
-                ...post,
-                reactions: post.reactions ? JSON.parse(post.reactions) : {},
-                verified: post.verified,
-            }));
+    if (!user || !token || !hasMore) return;
+    try {
+        setLoading(true);
+        const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const postsData = res.data.map((post: Post) => ({
+            ...post,
+            reactions: post.reactions ? JSON.parse(post.reactions) : {},
+            verified: post.verified,
+        }));
 
-            setPosts((prev) => {
-                const existingIds = new Set(prev.map((p) => p.id));
-                const newPosts = postsData.filter((post: Post) => !existingIds.has(post.id));
-                return [...prev, ...newPosts];
-            });
-            setHasMore(postsData.length === limit);
-
-            const newComments: { [postId: number]: CommentType[] } = { ...comments };
-            for (const post of postsData) {
-                if (!newComments[post.id]) {
-                    const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    newComments[post.id] = commentRes.data;
-                    setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
-                }
+        setPosts((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newPosts = postsData.filter((post: Post) => !existingIds.has(post.id));
+            return [...prev, ...newPosts];
+        });
+        setHasMore(postsData.length === limit);
+        
+        // Fetch comments for new posts
+        const newComments: { [postId: number]: CommentType[] } = { ...comments };
+        for (const post of postsData) {
+            if (!newComments[post.id]) {
+                const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                newComments[post.id] = commentRes.data;
+                setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
             }
-            setComments(newComments);
-        } catch (err) {
-            toast.error("Error fetching posts: " + (err.response?.data?.message || err.message));
-        } finally {
-            setLoading(false);
         }
-    }, [user, token, offset, comments, hasMore]);
+        setComments(newComments);
+    } catch (err) {
+        setMessage("Error fetching posts: " + (err.response?.data?.message || err.message));
+    } finally {
+        setLoading(false);
+    }
+}, [user, token, offset, comments, hasMore]);
+    useEffect(() => {
+        fetchPosts();
+    }, [fetchPosts]);
 
-    // Fetch squads and user stats
     useEffect(() => {
         const fetchSquads = async () => {
             try {
@@ -173,201 +130,173 @@ export default function Dashboard() {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 setSquads(res.data);
-                setUserStats((prev) => ({ ...prev, squadCount: res.data.length }));
             } catch (err) {
                 console.error("Error fetching squads:", err);
             }
         };
 
-        const fetchUserStats = async () => {
-            try {
-                const postsRes = await axios.get(`/api/posts?limit=1000&offset=0`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                const userPosts = postsRes.data.filter((post: Post) => post.user_id === user?.id);
-                const likeCount = userPosts.reduce((sum: number, post: Post) => sum + (post.likes || 0), 0);
-                setUserStats((prev) => ({ ...prev, postCount: userPosts.length, likeCount }));
-            } catch (err) {
-                console.error("Error fetching user stats:", err);
-            }
-        };
-
         if (user && token) {
             fetchSquads();
-            fetchUserStats();
-            fetchPosts();
         }
-    }, [user, token, fetchPosts]);
+    }, [user, token]);
 
-    // Handle media drop
-    const onDrop = useCallback((acceptedFiles: File[]) => {
-        const file = acceptedFiles[0];
-        if (file.size > 10 * 1024 * 1024) {
-            toast.error("File size exceeds 10MB limit.");
-            return;
-        }
-        setMediaFile(file);
-        if (mediaPreview) URL.revokeObjectURL(mediaPreview);
-        const previewUrl = URL.createObjectURL(file);
-        setMediaPreview(previewUrl);
-    }, [mediaPreview]);
-
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({
-        onDrop,
-        accept: { "image/*": [], "video/*": [] },
-        maxSize: 10 * 1024 * 1024,
-    });
-
-    // Handle post creation
     const handlePost = async () => {
-        if (!user || !token) {
-            toast.error("Please log in to post.");
-            return;
-        }
-        if (!content && !mediaFile) {
-            toast.error("Post content or media is required.");
-            return;
-        }
-        try {
-            const formData = new FormData();
-            formData.append("email", user.email);
-            formData.append("content", content);
-            formData.append("mode", "main");
-            if (mediaFile) formData.append("media", mediaFile);
-
-            const res = await axios.post("/api/create-post", formData, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "multipart/form-data",
-                },
-            });
-            toast.success(res.data.message);
-            setContent("");
-            setMediaFile(null);
-            setMediaPreview(null);
-
-            const newPostsRes = await axios.get(`/api/posts?limit=${limit}&offset=0`, {
+    if (!user || !token) {
+        setMessage("Please log in to post.");
+        return;
+    }
+    try {
+        const res = await axios.post(
+            "/api/create-post",
+            {
+                email: user.email,
+                content,
+                mode: "main",
+            },
+            {
                 headers: { Authorization: `Bearer ${token}` },
-            });
-            const newPostsData = newPostsRes.data.map((post: Post) => ({
-                ...post,
-                reactions: post.reactions ? JSON.parse(post.reactions) : {},
-                verified: post.verified,
-            }));
-            setPosts(newPostsData);
-            setOffset(0);
-            setHasMore(newPostsData.length === limit);
-            setShowConfetti(true);
-            setTimeout(() => setShowConfetti(false), 3000);
-        } catch (err) {
-            toast.error("Error posting: " + (err.response?.data?.message || err.message));
-        }
-    };
+            }
+        );
+        setMessage(res.data.message);
+        setContent("");
+        
+        // Fetch the latest posts without resetting offset
+        const newPostsRes = await axios.get(`/api/posts?limit=${limit}&offset=0`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const newPostsData = newPostsRes.data.map((post: Post) => ({
+            ...post,
+            reactions: post.reactions ? JSON.parse(post.reactions) : {},
+            verified: post.verified,
+        }));
+        setPosts(newPostsData); // Replace posts instead of appending
+        setOffset(0); // Reset offset for future fetches
+        setHasMore(newPostsData.length === limit);
+    } catch (err) {
+        setMessage("Error posting: " + (err.response?.data?.message || err.message));
+    }
+};
 
     const handleLike = async (postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to like a post.");
+            setMessage("Please log in to like a post.");
             return;
         }
         try {
-            await axios.post("/api/like", { postId, email: user.email }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setPosts(posts.map((post) =>
+            await axios.post(
+                "/api/like",
+                {
+                    postId,
+                    email: user.email,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            const updatedPosts = posts.map((post) =>
                 post.id === postId ? { ...post, likes: (post.likes || 0) + 1 } : post
-            ));
-            toast.success("Post liked!");
+            );
+            setPosts(updatedPosts);
         } catch (err) {
-            toast.error("Error liking post: " + (err.response?.data?.message || err.message));
+            setMessage("Error liking post: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleComment = async (postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to comment.");
-            return;
-        }
-        if (!commentContent[postId]) {
-            toast.error("Comment content is required.");
+            setMessage("Please log in to comment.");
             return;
         }
         try {
-            await axios.post("/api/posts/comments", {
-                email: user.email,
-                postId,
-                content: commentContent[postId],
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/posts/comments",
+                {
+                    email: user.email,
+                    postId,
+                    content: commentContent[postId] || "",
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             setCommentContent({ ...commentContent, [postId]: "" });
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setComments({ ...comments, [postId]: commentRes.data });
-            toast.success("Comment added!");
         } catch (err) {
-            toast.error("Error adding comment: " + (err.response?.data?.message || err.message));
+            setMessage("Error adding comment: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleReply = async (commentId: number, postId: number, content: string) => {
         if (!user || !token) {
-            toast.error("Please log in to reply.");
+            setMessage("Please log in to reply.");
             return;
         }
         try {
-            await axios.post("/api/posts/comments/reply", {
-                email: user.email,
-                commentId,
-                content,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/posts/comments/reply",
+                {
+                    email: user.email,
+                    commentId,
+                    content,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setComments({ ...comments, [postId]: commentRes.data });
-            toast.success("Reply added!");
         } catch (err) {
-            toast.error("Error adding reply: " + (err.response?.data?.message || err.message));
+            setMessage("Error adding reply: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleCommentLike = async (commentId: number, postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to like a comment.");
+            setMessage("Please log in to like a comment.");
             return;
         }
         try {
-            await axios.post("/api/posts/comments/like", {
-                email: user.email,
-                commentId,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/posts/comments/like",
+                {
+                    email: user.email,
+                    commentId,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setComments({ ...comments, [postId]: commentRes.data });
-            toast.success("Comment liked!");
         } catch (err) {
-            toast.error("Error liking comment: " + (err.response?.data?.message || err.message));
+            setMessage("Error liking comment: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleReact = async (postId: number, reaction: string) => {
         if (!user || !token) {
-            toast.error("Please log in to react.");
+            setMessage("Please log in to react.");
             return;
         }
         try {
-            await axios.post("/api/posts/react", {
-                email: user.email,
-                postId,
-                reaction,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/posts/react",
+                {
+                    email: user.email,
+                    postId,
+                    reaction,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             setShowReactions(null);
             const updatedPosts = await axios.get(`/api/posts?limit=${posts.length}&offset=0`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -378,9 +307,8 @@ export default function Dashboard() {
                 verified: post.verified,
             }));
             setPosts(postsData);
-            toast.success(`Reacted with ${reaction}!`);
         } catch (err) {
-            toast.error("Error adding reaction: " + (err.response?.data?.message || err.message));
+            setMessage("Error adding reaction: " + (err.response?.data?.message || err.message));
         }
     };
 
@@ -392,30 +320,34 @@ export default function Dashboard() {
 
     const handleEdit = async (postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to edit.");
+            setMessage("Please log in to edit.");
             return;
         }
         try {
-            await axios.put(`/api/posts/edit/${postId}`, {
-                email: user.email,
-                content: editContent,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.put(
+                `/api/posts/edit/${postId}`,
+                {
+                    email: user.email,
+                    content: editContent,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             setEditingPost(null);
             setEditContent("");
-            setPosts(posts.map((post) =>
+            const updatedPosts = posts.map((post) =>
                 post.id === postId ? { ...post, content: editContent } : post
-            ));
-            toast.success("Post updated!");
+            );
+            setPosts(updatedPosts);
         } catch (err) {
-            toast.error("Error editing post: " + (err.response?.data?.message || err.message));
+            setMessage("Error editing post: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleDelete = async (postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to delete.");
+            setMessage("Please log in to delete.");
             return;
         }
         try {
@@ -425,51 +357,57 @@ export default function Dashboard() {
             });
             setShowMenu(null);
             setPosts(posts.filter((post) => post.id !== postId));
-            toast.success("Post deleted!");
         } catch (err) {
-            toast.error("Error deleting post: " + (err.response?.data?.message || err.message));
+            setMessage("Error deleting post: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handlePinComment = async (commentId: number, postId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to pin a comment.");
+            setMessage("Please log in to pin a comment.");
             return;
         }
         try {
-            await axios.post("/api/posts/comments/pin", {
-                email: user.email,
-                commentId,
-                postId,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            await axios.post(
+                "/api/posts/comments/pin",
+                {
+                    email: user.email,
+                    commentId,
+                    postId,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
             const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setComments({ ...comments, [postId]: commentRes.data });
-            toast.success("Comment pinned!");
         } catch (err) {
-            toast.error("Error pinning comment: " + (err.response?.data?.message || err.message));
+            setMessage("Error pinning comment: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleShare = async (postId: number, squadId: number) => {
         if (!user || !token) {
-            toast.error("Please log in to share.");
+            setMessage("Please log in to share.");
             return;
         }
         try {
-            await axios.post("/api/posts/share", {
-                email: user.email,
-                postId,
-                squadId,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            toast.success("Post shared to squad!");
+            await axios.post(
+                "/api/posts/share",
+                {
+                    email: user.email,
+                    postId,
+                    squadId,
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+            setMessage("Post shared successfully!");
         } catch (err) {
-            toast.error("Error sharing post: " + (err.response?.data?.message || err.message));
+            setMessage("Error sharing post: " + (err.response?.data?.message || err.message));
         }
     };
 
@@ -486,454 +424,253 @@ export default function Dashboard() {
 
     if (!user || !token) {
         return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 to-pink-500"
-            >
-                <div className="text-center space-y-4">
-                    <h1 className="text-2xl font-bold text-white">Access Denied</h1>
-                    <p className="text-gray-200">Please log in to access TeenVerse.</p>
-                    <a
-                        href="/login"
-                        className="inline-block px-6 py-2 bg-white text-purple-600 rounded-full hover:bg-gray-100 transition"
-                    >
-                        Log In
-                    </a>
-                </div>
-            </motion.div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+                <div className="text-center text-red-500 text-xl">Please log in to access the dashboard.</div>
+            </div>
         );
     }
 
     return (
-        <div className={darkMode ? "dark" : ""}>
-            {showConfetti && <Confetti recycle={false} numberOfPieces={200} />}
-            <ToastContainer position="top-right" autoClose={3000} theme={darkMode ? "dark" : "light"} />
+        <div>
             <Navigation />
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-500 p-4 sm:p-6 dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900"
-            >
-                <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
-                    {/* Main Content */}
-                    <div className="lg:col-span-3">
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="sticky top-4 z-20 bg-white bg-opacity-20 backdrop-blur-lg p-6 rounded-2xl shadow-xl mb-6 dark:bg-gray-800 dark:bg-opacity-20"
-                        >
-                            <h2 className="text-xl font-semibold text-white mb-4 dark:text-gray-200">
-                                What's on your mind?
-                            </h2>
-                            <textarea
-                                value={content}
-                                onChange={(e) => setContent(e.target.value)}
-                                placeholder="Share your vibe..."
-                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-                                rows={4}
-                                aria-label="Post content"
-                            />
-                            <div
-                                {...getRootProps()}
-                                className={`mt-2 p-4 border-dashed border-2 rounded-lg text-center cursor-pointer ${
-                                    isDragActive ? "border-purple-500 bg-purple-100" : "border-gray-300"
-                                }`}
-                            >
-                                <input {...getInputProps()} aria-label="Upload media" />
-                                <UploadIcon className="w-6 h-6 mx-auto text-gray-600 dark:text-gray-300" />
-                                <p className="text-gray-600 dark:text-gray-300">
-                                    Drag & drop media or click to upload (max 10MB)
-                                </p>
-                            </div>
-                            {mediaPreview && (
-                                <div className="mt-2">
-                                    {mediaFile?.type.startsWith("video") ? (
-                                        <video
-                                            src={mediaPreview}
-                                            controls
-                                            className="w-full max-w-xs rounded-lg"
-                                            aria-label="Media preview"
-                                        />
-                                    ) : (
-                                        <img
-                                            src={mediaPreview}
-                                            alt="Media preview"
-                                            className="w-full max-w-xs rounded-lg"
-                                            loading="lazy"
-                                        />
-                                    )}
-                                    <button
-                                        onClick={() => {
-                                            setMediaFile(null);
-                                            setMediaPreview(null);
-                                        }}
-                                        className="mt-2 text-red-600 hover:text-red-800"
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            )}
-                            <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={handlePost}
-                                className="mt-4 w-full bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-pink-600 transition"
-                            >
-                                Post
-                            </motion.button>
-                        </motion.div>
+            <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
+                <div className="max-w-2xl mx-auto">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">
+                        Welcome to TeenVerse, {user.username || user.email}!
+                    </h1>
+                    <p className="text-center text-green-600 mb-6">{message}</p>
 
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="bg-white bg-opacity-20 backdrop-blur-lg p-6 rounded-2xl shadow-xl mb-6 dark:bg-gray-800 dark:bg-opacity-20"
+                    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md mb-6">
+                        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Create a Post</h2>
+                        <textarea
+                            value={content}
+                            onChange={(e) => setContent(e.target.value)}
+                            placeholder="What's on your mind?"
+                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+                        />
+                        <button
+                            onClick={handlePost}
+                            className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
                         >
-                            <h1 className="text-3xl font-extrabold text-white mb-6 dark:text-gray-200">
-                                Welcome to TeenVerse, {user.username || user.email}!
-                            </h1>
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="text-center">
-                                    <p className="text-lg font-semibold text-white dark:text-gray-200">
-                                        {userStats.postCount}
-                                    </p>
-                                    <p className="text-sm text-gray-200 dark:text-gray-400">Posts</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-lg font-semibold text-white dark:text-gray-200">
-                                        {userStats.likeCount}
-                                    </p>
-                                    <p className="text-sm text-gray-200 dark:text-gray-400">Likes</p>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-lg font-semibold text-white dark:text-gray-200">
-                                        {userStats.squadCount}
-                                    </p>
-                                    <p className="text-sm text-gray-200 dark:text-gray-400">Squads</p>
-                                </div>
-                            </div>
-                        </motion.div>
+                            Post
+                        </button>
+                    </div>
 
-                        <div className="space-y-6">
-                            <AnimatePresence>
-                                {posts.length > 0 ? (
-                                    posts.map((post, index) => (
-                                        <motion.div
-                                            key={post.id}
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0 }}
-                                            ref={index === posts.length - 1 ? lastPostElementRef : null}
-                                            className="bg-white bg-opacity-20 backdrop-blur-lg rounded-2xl shadow-xl p-6 dark:bg-gray-800 dark:bg-opacity-20"
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1">
-                                                    <Link to={`/profile/${post.username}`}>
-                                                        <p className="font-semibold text-white inline-flex items-center dark:text-gray-200">
-                                                            {post.username}{" "}
-                                                            {post.verified ? (
-                                                                <span className="ml-1 inline-block bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-full h-5 w-5 text-center leading-5 text-xs animate-pulse">
-                                                                    ✓
-                                                                </span>
-                                                            ) : null}
-                                                        </p>
-                                                    </Link>
-                                                    {editingPost === post.id ? (
-                                                        <div className="mt-2">
-                                                            <textarea
-                                                                value={editContent}
-                                                                onChange={(e) => setEditContent(e.target.value)}
-                                                                className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-                                                                aria-label="Edit post content"
-                                                            />
-                                                            <div className="flex space-x-2 mt-2">
-                                                                <motion.button
-                                                                    whileHover={{ scale: 1.05 }}
-                                                                    whileTap={{ scale: 0.95 }}
-                                                                    onClick={() => handleEdit(post.id)}
-                                                                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-                                                                >
-                                                                    Save
-                                                                </motion.button>
-                                                                <motion.button
-                                                                    whileHover={{ scale: 1.05 }}
-                                                                    whileTap={{ scale: 0.95 }}
-                                                                    onClick={() => setEditingPost(null)}
-                                                                    className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
-                                                                >
-                                                                    Cancel
-                                                                </motion.button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <p className="text-gray-200 whitespace-pre-wrap mt-1 dark:text-gray-300">
-                                                                {post.content}
-                                                            </p>
-                                                            {post.media_url && (
-                                                                <div className="mt-2">
-                                                                    {post.media_type === "video" ? (
-                                                                        <video
-                                                                            src={post.media_url}
-                                                                            controls
-                                                                            className="w-full max-w-md rounded-lg"
-                                                                            aria-label={`${post.username}'s video`}
-                                                                            loading="lazy"
-                                                                        />
-                                                                    ) : (
-                                                                        <img
-                                                                            src={post.media_url}
-                                                                            alt={`${post.username}'s image`}
-                                                                            className="w-full max-w-md rounded-lg"
-                                                                            loading="lazy"
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                            <p className="text-gray-400 text-sm mt-1 dark:text-gray-500">
-                                                                {new Date(post.created_at).toLocaleString()}
-                                                            </p>
-                                                        </>
-                                                    )}
-                                                </div>
-                                                {post.user_id === user.id && (
-                                                    <div className="relative">
-                                                        <motion.button
-                                                            whileHover={{ scale: 1.05 }}
-                                                            onClick={() => setShowMenu(post.id === showMenu ? null : post.id)}
-                                                            className="text-gray-200 hover:text-white dark:text-gray-400 dark:hover:text-gray-200"
+                    <div className="space-y-6">
+                        {posts.length > 0 ? (
+                            posts.map((post, index) => (
+                                <div
+                                    key={post.id}
+                                    ref={index === posts.length - 1 ? lastPostElementRef : null}
+                                    className="bg-white rounded-lg shadow-md p-4 sm:p-6"
+                                >
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <Link to={`/profile/${post.username}`}>
+                                                <p className="font-semibold text-gray-800 inline">
+                                                    {post.username}{" "}
+                                                    {post.verified ? (
+                                                        <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
+                                                            ✓
+                                                        </span>
+                                                    ) : null}
+                                                </p>
+                                            </Link>
+                                            {editingPost === post.id ? (
+                                                <div className="mt-2">
+                                                    <textarea
+                                                        value={editContent}
+                                                        onChange={(e) => setEditContent(e.target.value)}
+                                                        className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
+                                                    />
+                                                    <div className="flex space-x-2">
+                                                        <button
+                                                            onClick={() => handleEdit(post.id)}
+                                                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
                                                         >
-                                                            <MoreHorizontalIcon className="w-5 h-5" />
-                                                        </motion.button>
-                                                        {showMenu === post.id && (
-                                                            <motion.div
-                                                                initial={{ opacity: 0, scale: 0.95 }}
-                                                                animate={{ opacity: 1, scale: 1 }}
-                                                                className="absolute right-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
-                                                            >
-                                                                <button
-                                                                    onClick={() => startEditing(post)}
-                                                                    className="block text-gray-200 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:text-gray-300 dark:hover:bg-gray-700"
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDelete(post.id)}
-                                                                    className="block text-red-600 px-2 py-1 hover:bg-gray-100 hover:bg-opacity-20 dark:hover:bg-gray-700"
-                                                                >
-                                                                    Delete
-                                                                </button>
-                                                            </motion.div>
-                                                        )}
+                                                            Save
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingPost(null)}
+                                                            className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <p className="text-gray-700 whitespace-pre-wrap mt-1">{post.content}</p>
+                                                    <p className="text-gray-500 text-sm mt-1">
+                                                        {new Date(post.created_at).toLocaleString()}
+                                                    </p>
+                                                </>
+                                            )}
+                                        </div>
+                                        {post.user_id === user.id && (
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() =>
+                                                        setShowMenu(post.id === showMenu ? null : post.id)
+                                                    }
+                                                    className="text-gray-600 hover:text-gray-800 text-sm"
+                                                >
+                                                    ...
+                                                </button>
+                                                {showMenu === post.id && (
+                                                    <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow-lg p-2 z-10">
+                                                        <button
+                                                            onClick={() => startEditing(post)}
+                                                            className="block text-gray-800 px-2 py-1 hover:bg-gray-100"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(post.id)}
+                                                            className="block text-red-600 px-2 py-1 hover:bg-gray-100"
+                                                        >
+                                                            Delete
+                                                        </button>
                                                     </div>
                                                 )}
                                             </div>
+                                        )}
+                                    </div>
 
-                                            <div className="flex items-center justify-between mt-3 border-t border-gray-200 border-opacity-20 pt-2">
-                                                <div className="flex items-center space-x-4">
-                                                    <motion.button
-                                                        whileHover={{ scale: 1.1 }}
-                                                        whileTap={{ scale: 0.9 }}
-                                                        onClick={() => handleLike(post.id)}
-                                                        className="text-blue-400 hover:text-blue-600 flex items-center dark:text-blue-300 dark:hover:text-blue-500"
-                                                    >
-                                                        <ThumbsUpIcon className="w-5 h-5 mr-1" />
-                                                        {post.likes || 0}
-                                                    </motion.button>
-                                                    <div className="relative">
-                                                        <motion.button
-                                                            whileHover={{ scale: 1.1 }}
-                                                            whileTap={{ scale: 0.9 }}
-                                                            onClick={() => setShowReactions(post.id === showReactions ? null : post.id)}
-                                                            className="text-yellow-400 hover:text-yellow-600 flex items-center dark:text-yellow-300 dark:hover:text-yellow-500"
-                                                        >
-                                                            <StarIcon className="w-5 h-5 mr-1" />
-                                                            React
-                                                        </motion.button>
-                                                        {showReactions === post.id && (
-                                                            <motion.div
-                                                                initial={{ opacity: 0, y: 10 }}
-                                                                animate={{ opacity: 1, y: 0 }}
-                                                                className="absolute left-0 mt-2 bg-white bg-opacity-20 backdrop-blur-lg border rounded-lg shadow-lg p-2 flex flex-wrap gap-2 z-10 dark:bg-gray-800 dark:bg-opacity-20 dark:border-gray-600"
-                                                            >
-                                                                {reactionsList.map((reaction) => (
-                                                                    <motion.button
-                                                                        key={reaction}
-                                                                        whileHover={{ scale: 1.2 }}
-                                                                        onClick={() => handleReact(post.id, reaction)}
-                                                                        className="text-2xl"
-                                                                        title={reaction}
-                                                                    >
-                                                                        {reactionEmojis[reaction]}
-                                                                    </motion.button>
-                                                                ))}
-                                                            </motion.div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center space-x-2">
-                                                        {Object.entries(post.reactions).map(([reaction, users]) =>
-                                                            users.length > 0 && (
-                                                                <span key={reaction} className="text-sm text-gray-200 dark:text-gray-400">
-                                                                    {reactionEmojis[reaction]} {users.length}
-                                                                </span>
-                                                            )
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <motion.button
-                                                    whileHover={{ scale: 1.05 }}
-                                                    onClick={() => toggleComments(post.id)}
-                                                    className="text-indigo-400 hover:text-indigo-600 text-sm flex items-center dark:text-indigo-300 dark:hover:text-indigo-500"
+                                    <div className="flex items-center justify-between mt-3 border-t pt-2">
+                                        <div className="flex items-center space-x-2">
+                                            <button
+                                                onClick={() => handleLike(post.id)}
+                                                className="text-blue-600 hover:text-blue-800 flex items-center"
+                                            >
+                                                👍 {post.likes || 0}
+                                            </button>
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() =>
+                                                        setShowReactions(post.id === showReactions ? null : post.id)
+                                                    }
+                                                    className="text-yellow-600 hover:text-yellow-800 flex items-center"
                                                 >
-                                                    <MessageCircleIcon className="w-5 h-5 mr-1" />
-                                                    {showComments[post.id]
-                                                        ? "Hide comments"
-                                                        : `Comments (${comments[post.id]?.length || 0})`}
-                                                </motion.button>
-                                            </div>
-
-                                            {showComments[post.id] && (
-                                                <div className="mt-4">
-                                                    {comments[post.id]?.length > 0 ? (
-                                                        <>
-                                                            {comments[post.id]
-                                                                .sort((a, b) => b.pinned - a.pinned)
-                                                                .slice(0, visibleComments[post.id])
-                                                                .map((comment) => (
-                                                                    <Comment
-                                                                        key={comment.id}
-                                                                        comment={comment}
-                                                                        postId={post.id}
-                                                                        user={user}
-                                                                        token={token}
-                                                                        onCommentLike={handleCommentLike}
-                                                                        onPinComment={handlePinComment}
-                                                                        onReply={handleReply}
-                                                                    />
-                                                                ))}
-                                                            {comments[post.id].length > visibleComments[post.id] && (
-                                                                <motion.button
-                                                                    whileHover={{ scale: 1.05 }}
-                                                                    onClick={() => loadMoreComments(post.id)}
-                                                                    className="text-indigo-400 hover:text-indigo-600 text-sm mt-2 dark:text-indigo-300 dark:hover:text-indigo-500"
-                                                                >
-                                                                    View more comments
-                                                                </motion.button>
-                                                            )}
-                                                        </>
-                                                    ) : (
-                                                        <p className="text-gray-400 text-sm dark:text-gray-500">
-                                                            No comments yet.
-                                                        </p>
-                                                    )}
-
-                                                    <div className="mt-4">
-                                                        <textarea
-                                                            value={commentContent[post.id] || ""}
-                                                            onChange={(e) =>
-                                                                setCommentContent({
-                                                                    ...commentContent,
-                                                                    [post.id]: e.target.value,
-                                                                })
-                                                            }
-                                                            placeholder="Add a comment..."
-                                                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white bg-opacity-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-                                                            rows={2}
-                                                            aria-label="Comment input"
-                                                        />
-                                                        <motion.button
-                                                            whileHover={{ scale: 1.05 }}
-                                                            whileTap={{ scale: 0.95 }}
-                                                            onClick={() => handleComment(post.id)}
-                                                            className="mt-2 bg-gradient-to-r from-purple-600 to-pink-500 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-pink-600 transition"
-                                                        >
-                                                            Comment
-                                                        </motion.button>
+                                                    😊 React
+                                                </button>
+                                                {showReactions === post.id && (
+                                                    <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg p-2 flex space-x-1 z-10">
+                                                        {reactionsList.map((reaction) => (
+                                                            <button
+                                                                key={reaction}
+                                                                onClick={() => handleReact(post.id, reaction)}
+                                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 transition"
+                                                            >
+                                                                {reaction}
+                                                            </button>
+                                                        ))}
                                                     </div>
-                                                </div>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                {Object.entries(post.reactions).map(
+                                                    ([reaction, users]: [string, string[]]) =>
+                                                        users.length > 0 && (
+                                                            <span key={reaction} className="text-sm text-gray-600">
+                                                                {reaction}: {users.length}
+                                                            </span>
+                                                        )
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => toggleComments(post.id)}
+                                            className="text-indigo-600 hover:text-indigo-800 text-sm"
+                                        >
+                                            {showComments[post.id]
+                                                ? "Hide comments"
+                                                : `View comments (${comments[post.id]?.length || 0})`}
+                                        </button>
+                                    </div>
+
+                                    {showComments[post.id] && (
+                                        <div className="mt-4">
+                                            {comments[post.id]?.length > 0 ? (
+                                                <>
+                                                    {comments[post.id]
+                                                        .sort((a, b) => b.pinned - a.pinned)
+                                                        .slice(0, visibleComments[post.id])
+                                                        .map((comment) => (
+                                                            <Comment
+                                                                key={comment.id}
+                                                                comment={comment}
+                                                                postId={post.id}
+                                                                user={user}
+                                                                token={token}
+                                                                onCommentLike={handleCommentLike}
+                                                                onPinComment={handlePinComment}
+                                                                onReply={handleReply}
+                                                            />
+                                                        ))}
+                                                    {comments[post.id].length > visibleComments[post.id] && (
+                                                        <button
+                                                            onClick={() => loadMoreComments(post.id)}
+                                                            className="text-indigo-600 hover:text-indigo-800 text-sm mt-2"
+                                                        >
+                                                            View more comments
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="text-gray-600 text-sm">No comments yet.</p>
                                             )}
 
-                                            <div className="mt-3">
-                                                <select
-                                                    onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
-                                                    className="border rounded-lg p-1 text-sm text-gray-200 bg-white bg-opacity-20 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
-                                                    defaultValue=""
-                                                    aria-label="Share to squad"
+                                            <div className="mt-4">
+                                                <textarea
+                                                    value={commentContent[post.id] || ""}
+                                                    onChange={(e) =>
+                                                        setCommentContent({
+                                                            ...commentContent,
+                                                            [post.id]: e.target.value,
+                                                        })
+                                                    }
+                                                    placeholder="Add a comment..."
+                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                />
+                                                <button
+                                                    onClick={() => handleComment(postId)}
+                                                    className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
                                                 >
-                                                    <option value="" disabled>
-                                                        Share to Squad
-                                                    </option>
-                                                    {squads.map((squad) => (
-                                                        <option key={squad.id} value={squad.id}>
-                                                            {squad.game_name} - {squad.description}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                    Comment
+                                                </button>
                                             </div>
-                                        </motion.div>
-                                    ))
-                                ) : (
-                                    <p className="text-gray-200 text-center dark:text-gray-400">
-                                        No posts yet. Share your vibe!
-                                    </p>
-                                )}
-                            </AnimatePresence>
-                            {loading && (
-                                <div className="text-center text-gray-200 dark:text-gray-400">
-                                    <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ repeat: Infinity, duration: 1 }}
-                                        className="inline-block w-6 h-6 border-2 border-t-transparent border-gray-200 rounded-full"
-                                    />
-                                    <p>Loading...</p>
-                                </div>
-                            )}
-                            {!hasMore && posts.length > 0 && (
-                                <p className="text-center text-gray-200 dark:text-gray-400">
-                                    No more posts to load.
-                                </p>
-                            )}
-                        </div>
-                    </div>
+                                        </div>
+                                    )}
 
-                    {/* Sidebar */}
-                    <div className="lg:col-span-1">
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            className="bg-white bg-opacity-20 backdrop-blur-lg p-6 rounded-2xl shadow-xl dark:bg-gray-800 dark:bg-opacity-20"
-                        >
-                            <h2 className="text-xl font-semibold text-white mb-4 dark:text-gray-200">
-                                Trending Squads
-                            </h2>
-                            {squads.length > 0 ? (
-                                squads.slice(0, 5).map((squad) => (
-                                    <div key={squad.id} className="mb-4">
-                                        <p className="font-semibold text-gray-200 dark:text-gray-300">
-                                            {squad.game_name}
-                                        </p>
-                                        <p className="text-sm text-gray-400 dark:text-gray-500">
-                                            {squad.description}
-                                        </p>
+                                    <div className="mt-3">
+                                        <select
+                                            onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
+                                            className="border rounded-lg p-1 text-sm text-gray-600"
+                                            defaultValue=""
+                                        >
+                                            <option value="" disabled>
+                                                Share to Squad
+                                            </option>
+                                            {squads.map((squad) => (
+                                                <option key={squad.id} value={squad.id}>
+                                                    {squad.game_name} - {squad.description}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
-                                ))
-                            ) : (
-                                <p className="text-gray-400 dark:text-gray-500">
-                                    No squads yet. Join one!
-                                </p>
-                            )}
-                        </motion.div>
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setDarkMode(!darkMode)}
-                            className="mt-4 w-full bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
-                        >
-                            {darkMode ? "Light Mode" : "Dark Mode"}
-                        </motion.button>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-gray-600 text-center">No posts yet.</p>
+                        )}
+                        {loading && <p className="text-center text-gray-600">Loading...</p>}
+                        {!hasMore && posts.length > 0 && (
+                            <p className="text-center text-gray-600">No more posts to load.</p>
+                        )}
                     </div>
                 </div>
-            </motion.div>
+            </div>
         </div>
     );
-}
+           }
