@@ -39,6 +39,8 @@
     "cloudinary": "^2.5.0", 
     "backblaze-b2": "^1.7.0",
     "lucide-react": "^0.453.0",
+    "react-dropzone": "^14.2.10",
+    "react-toastify": "^10.0.6",
     "react-confetti": "^6.1.0"
   },
   "devDependencies": {
