@@ -1,14 +1,19 @@
+import { User } from "../types";
+
 declare global {
     namespace Express {
         interface Request {
-            user?: { 
-                email: string; 
-                verified: number; 
-                id?: number; 
+            user?: {
+                id: number;
+                email: string;
+                verified: number;
+                username?: string;
+                coins?: number;
+                xp?: number;
+                creator_badge?: number;
             };
         }
     }
 }
 
-// Ensures the file is treated as a module
 export {};

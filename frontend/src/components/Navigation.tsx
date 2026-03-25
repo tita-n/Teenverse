@@ -1,219 +1,187 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { motion, AnimatePresence } from "framer-motion"; // For animations
-import { MenuIcon, XIcon, LogOutIcon, UserIcon, ZapIcon, TrophyIcon, MessageCircleIcon, CoinsIcon, ShoppingBagIcon, LayoutDashboardIcon, NewspaperIcon, FlameIcon, UsersIcon } from "lucide-react"; // For icons
-import Confetti from "react-confetti"; // For celebratory logout effect
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Menu, X, LogOut, User, Zap, Trophy, MessageCircle, Coins,
+  ShoppingBag, LayoutDashboard, Newspaper, Flame, Users, Settings,
+} from "lucide-react";
+
+const navLinks = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/news-feed", label: "News Feed", icon: Newspaper },
+  { to: "/rant-zone", label: "Rant Zone", icon: Flame },
+  { to: "/game-squad", label: "Game Squad", icon: Users },
+  { to: "/hype-battles", label: "HYPE Battles", icon: Zap },
+  { to: "/ultimate-showdown", label: "Ultimate Showdown", icon: Trophy },
+  { to: "/clout-missions", label: "Clout Missions", icon: Flame },
+  { to: "/hall-of-fame", label: "Hall of Fame", icon: Trophy },
+  { to: "/buy-coins", label: "Buy Coins", icon: Coins },
+  { to: "/shop", label: "Shop", icon: ShoppingBag },
+];
+
+const authLinks = [
+  { to: "/chats", label: "Chats", icon: MessageCircle, requiresAuth: true },
+  { to: "/profile", label: "Profile", icon: User, requiresAuth: true, dynamic: true },
+  { to: "/settings", label: "Settings", icon: Settings, requiresAuth: true },
+];
 
 export default function Navigation() {
-    const [isOpen, setIsOpen] = useState(false);
-    const [showConfetti, setShowConfetti] = useState(false);
-    const { user, logout } = useAuth();
-    const navigate = useNavigate();
-    const location = useLocation(); // To highlight active route
+  const [isOpen, setIsOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-    const handleLogout = () => {
-        logout();
-        setShowConfetti(true);
-        setTimeout(() => {
-            setShowConfetti(false);
-            navigate("/");
-            setIsOpen(false);
-        }, 2000); // Confetti for 2 seconds before redirect
-    };
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+    setIsOpen(false);
+  };
 
-    // Navigation links with icons
-    const navLinks = [
-        { to: "/dashboard", label: "Dashboard", icon: <LayoutDashboardIcon className="w-5 h-5 mr-1" /> },
-        { to: "/news-feed", label: "News Feed", icon: <NewspaperIcon className="w-5 h-5 mr-1" /> },
-        { to: "/rant-zone", label: "Rant Zone", icon: <FlameIcon className="w-5 h-5 mr-1" /> },
-        { to: "/game-squad", label: "Game Squad", icon: <UsersIcon className="w-5 h-5 mr-1" /> },
-        { to: "/hype-battles", label: "HYPE Battles", icon: <ZapIcon className="w-5 h-5 mr-1" /> },
-        { to: "/ultimate-showdown", label: "Ultimate Showdown", icon: <TrophyIcon className="w-5 h-5 mr-1" /> },
-        { to: "/clout-missions", label: "Clout Missions", icon: <FlameIcon className="w-5 h-5 mr-1" /> },
-        { to: "/hall-of-fame", label: "Hall of Fame", icon: <TrophyIcon className="w-5 h-5 mr-1" /> },
-        { to: "/buy-coins", label: "Buy Coins", icon: <CoinsIcon className="w-5 h-5 mr-1" /> },
-        { to: "/shop", label: "Shop", icon: <ShoppingBagIcon className="w-5 h-5 mr-1" /> },
-        { to: `/profile/${user?.username || ''}`, label: "Profile", icon: <UserIcon className="w-5 h-5 mr-1" />, hide: !user },
-        { to: "/control-panel", label: "Control Panel", icon: <LayoutDashboardIcon className="w-5 h-5 mr-1" />, hide: user?.email !== "restorationmichael3@gmail.com" },
-        { to: "/chats", label: "Chats", icon: <MessageCircleIcon className="w-5 h-5 mr-1" />, hide: !user },
-    ];
+  const isActive = (path: string) => location.pathname === path;
+
+  const renderNavLink = (link: { to: string; label: string; icon: any; dynamic?: boolean }, isMobile = false) => {
+    const href = link.dynamic && user?.username ? `${link.to}/${user.username}` : link.to;
+    const Icon = link.icon;
+    const active = isActive(href) || (link.dynamic && location.pathname.startsWith(link.to));
 
     return (
-        <>
-            {showConfetti && <Confetti recycle={false} numberOfPieces={200} />}
-            <motion.nav
-                initial={{ y: -100 }}
-                animate={{ y: 0 }}
-                transition={{ type: "spring", stiffness: 120 }}
-                className="bg-gradient-to-r from-purple-600 to-blue-500 p-4 shadow-lg sticky top-0 z-50"
-            >
-                <div className="max-w-6xl mx-auto flex justify-between items-center">
-                    {/* Logo */}
-                    <motion.h1
-                        whileHover={{ scale: 1.05 }}
-                        className="text-white text-3xl font-extrabold tracking-tight"
-                    >
-                        <Link to="/" className="flex items-center">
-                            <ZapIcon className="w-8 h-8 mr-2" />
-                            TeenVerse
-                        </Link>
-                    </motion.h1>
-
-                    {/* Desktop Menu */}
-                    <div className="hidden md:flex items-center space-x-4">
-                        {user ? (
-                            <>
-                                <motion.span
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="text-white font-semibold flex items-center"
-                                >
-                                    <UserIcon className="w-5 h-5 mr-1" />
-                                    {user.username || user.email}
-                                </motion.span>
-                                {navLinks.map((link) => (
-                                    !link.hide && (
-                                        <motion.div
-                                            key={link.to}
-                                            whileHover={{ scale: 1.1 }}
-                                            whileTap={{ scale: 0.95 }}
-                                        >
-                                            <Link
-                                                to={link.to}
-                                                className={`text-white hover:text-indigo-200 flex items-center px-3 py-1 rounded-lg transition ${
-                                                    location.pathname === link.to ? "bg-indigo-700 font-bold" : ""
-                                                }`}
-                                            >
-                                                {link.icon}
-                                                {link.label}
-                                                {link.label === "Chats" && (
-                                                    <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">3</span>
-                                                )}
-                                            </Link>
-                                        </motion.div>
-                                    )
-                                ))}
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleLogout}
-                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition flex items-center"
-                                >
-                                    <LogOutIcon className="w-5 h-5 mr-1" />
-                                    Log Out
-                                </motion.button>
-                            </>
-                        ) : (
-                            <>
-                                <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
-                                    <Link to="/" className="text-white hover:text-indigo-200 px-3 py-1 rounded-lg transition">
-                                        Login
-                                    </Link>
-                                </motion.div>
-                                <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
-                                    <Link to="/register" className="text-white hover:text-indigo-200 px-3 py-1 rounded-lg transition">
-                                        Register
-                                    </Link>
-                                </motion.div>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Mobile Menu Button */}
-                    <div className="md:hidden flex items-center">
-                        <motion.button
-                            whileTap={{ scale: 0.9 }}
-                            onClick={() => setIsOpen(!isOpen)}
-                            className="text-white focus:outline-none"
-                            aria-label={isOpen ? "Close menu" : "Open menu"}
-                        >
-                            {isOpen ? (
-                                <XIcon className="w-6 h-6" />
-                            ) : (
-                                <MenuIcon className="w-6 h-6" />
-                            )}
-                        </motion.button>
-                    </div>
-                </div>
-
-                {/* Mobile Menu */}
-                <AnimatePresence>
-                    {isOpen && (
-                        <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="md:hidden mt-2 bg-indigo-700 rounded-lg p-4"
-                        >
-                            <div className="flex flex-col space-y-2">
-                                {user ? (
-                                    <>
-                                        <span className="text-white px-3 py-1 font-semibold flex items-center">
-                                            <UserIcon className="w-5 h-5 mr-1" />
-                                            Welcome, {user.username || user.email}!
-                                        </span>
-                                        {navLinks.map((link) => (
-                                            !link.hide && (
-                                                <motion.div
-                                                    key={link.to}
-                                                    whileHover={{ x: 5 }}
-                                                    whileTap={{ scale: 0.95 }}
-                                                >
-                                                    <Link
-                                                        to={link.to}
-                                                        className={`text-white hover:text-indigo-200 px-3 py-1 flex items-center rounded-lg transition ${
-                                                            location.pathname === link.to ? "bg-indigo-600 font-bold" : ""
-                                                        }`}
-                                                        onClick={() => setIsOpen(false)}
-                                                    >
-                                                        {link.icon}
-                                                        {link.label}
-                                                        {link.label === "Chats" && (
-                                                            <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">3</span>
-                                                        )}
-                                                    </Link>
-                                                </motion.div>
-                                            )
-                                        ))}
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={handleLogout}
-                                            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition flex items-center"
-                                        >
-                                            <LogOutIcon className="w-5 h-5 mr-1" />
-                                            Log Out
-                                        </motion.button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <motion.div whileHover={{ x: 5 }} whileTap={{ scale: 0.95 }}>
-                                            <Link
-                                                to="/"
-                                                className="text-white hover:text-indigo-200 px-3 py-1 rounded-lg transition"
-                                                onClick={() => setIsOpen(false)}
-                                            >
-                                                Login
-                                            </Link>
-                                        </motion.div>
-                                        <motion.div whileHover={{ x: 5 }} whileTap={{ scale: 0.95 }}>
-                                            <Link
-                                                to="/register"
-                                                className="text-white hover:text-indigo-200 px-3 py-1 rounded-lg transition"
-                                                onClick={() => setIsOpen(false)}
-                                            >
-                                                Register
-                                            </Link>
-                                        </motion.div>
-                                    </>
-                                )}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </motion.nav>
-        </>
+      <Link
+        key={link.to}
+        to={href}
+        onClick={() => isMobile && setIsOpen(false)}
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+          active
+            ? "bg-white/20 text-white"
+            : "text-white/80 hover:text-white hover:bg-white/10"
+        } ${isMobile ? "w-full" : ""}`}
+      >
+        <Icon className="w-4 h-4" />
+        {link.label}
+      </Link>
     );
-         }
+  };
+
+  return (
+    <nav className="bg-gradient-to-r from-brand-600 to-brand-700 shadow-lg sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-2 group">
+            <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center group-hover:bg-white/30 transition-colors">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-white font-bold text-xl tracking-tight">TeenVerse</span>
+          </Link>
+
+          {/* Desktop Nav */}
+          {user && (
+            <div className="hidden lg:flex items-center gap-1">
+              {navLinks.map((link) => renderNavLink(link))}
+            </div>
+          )}
+
+          {/* Desktop Right */}
+          <div className="hidden md:flex items-center gap-3">
+            {user ? (
+              <>
+                <Link
+                  to={authLinks[1].dynamic ? `${authLinks[1].to}/${user.username}` : authLinks[1].to}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white/90 hover:bg-white/10 transition-colors"
+                >
+                  <div className="w-7 h-7 bg-white/20 rounded-full flex items-center justify-center text-xs font-semibold">
+                    {(user.username || user.email || "U").charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm font-medium">{user.username || user.email}</span>
+                </Link>
+                {authLinks.filter((l) => !l.dynamic).map((link) => renderNavLink(link))}
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/80 hover:text-white hover:bg-red-500/20 transition-all duration-200 text-sm"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Log Out
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link to="/" className="btn-ghost text-white hover:bg-white/10 btn-sm">
+                  Log In
+                </Link>
+                <Link to="/register" className="bg-white text-brand-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/90 transition-colors">
+                  Sign Up
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="lg:hidden p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+            aria-label={isOpen ? "Close menu" : "Open menu"}
+          >
+            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Menu */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="lg:hidden overflow-hidden bg-brand-700/50 backdrop-blur-sm"
+          >
+            <div className="px-4 py-4 space-y-1">
+              {user ? (
+                <>
+                  <div className="flex items-center gap-3 px-3 py-2 mb-3 bg-white/10 rounded-lg">
+                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white font-semibold">
+                      {(user.username || user.email || "U").charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{user.username || user.email}</p>
+                      <p className="text-white/60 text-xs">Welcome back!</p>
+                    </div>
+                  </div>
+                  {navLinks.map((link) => renderNavLink(link, true))}
+                  <div className="border-t border-white/10 pt-2 mt-2">
+                    {authLinks.map((link) => renderNavLink(link, true))}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors text-sm mt-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log Out
+                  </button>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Link
+                    to="/"
+                    onClick={() => setIsOpen(false)}
+                    className="block w-full text-center px-4 py-3 rounded-lg text-white hover:bg-white/10 transition-colors"
+                  >
+                    Log In
+                  </Link>
+                  <Link
+                    to="/register"
+                    onClick={() => setIsOpen(false)}
+                    className="block w-full text-center px-4 py-3 rounded-lg bg-white text-brand-700 font-medium"
+                  >
+                    Sign Up
+                  </Link>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </nav>
+  );
+}

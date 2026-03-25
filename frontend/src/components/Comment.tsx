@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import DOMPurify from "dompurify";
+
+const sanitizeContent = (content: string): string => {
+  return DOMPurify.sanitize(content, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+};
 
 interface Comment {
     id: number;
@@ -138,7 +143,7 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                             {comment.pinned ? <span className="text-xs text-yellow-600"> (Pinned)</span> : ""}
                         </p>
                     </Link>
-                    <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
+                    <p className="text-gray-700 whitespace-pre-wrap">{sanitizeContent(comment.content)}</p>
                     <p className="text-gray-500 text-xs mt-1">{new Date(comment.created_at).toLocaleString()}</p>
                     <div className="flex items-center mt-1 space-x-3">
                         <button
@@ -221,7 +226,7 @@ export default function Comment({ comment, postId, user, token, onCommentLike, o
                                     ) : null}
                                 </p>
                             </Link>
-                            <p className="text-gray-700 whitespace-pre-wrap text-sm">{reply.content}</p>
+                            <p className="text-gray-700 whitespace-pre-wrap text-sm">{sanitizeContent(reply.content)}</p>
                             <p className="text-gray-500 text-xs mt-1">{new Date(reply.created_at).toLocaleString()}</p>
                         </div>
                     ))}

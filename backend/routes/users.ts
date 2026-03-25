@@ -1,7 +1,9 @@
 import express from "express";
-import { db } from "../database";
+import { dbGet, dbAll, dbRun } from "../database";
 import multer from "multer";
 import cloudinary from "cloudinary";
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'restorationmichael3@gmail.com';
 
 function calculateLevel(xp: number): { level: number; rank: string } {
     let level = Math.floor(xp / 10) + 1;
@@ -17,11 +19,10 @@ function calculateLevel(xp: number): { level: number; rank: string } {
     return { level, rank };
 }
 
-// Configure Multer for profile media uploads
 const storage = multer.memoryStorage();
 const upload = multer({
     storage,
-    limits: { fileSize: 3 * 1024 * 1024 }, // 3MB limit
+    limits: { fileSize: 3 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = ["image/jpeg", "image/png", "video/mp4"];
         if (allowedTypes.includes(file.mimetype)) {
@@ -34,53 +35,43 @@ const upload = multer({
 
 const router = express.Router();
 
-// Get user profile by username
+// ===== GET user profile by username - fixed redundant subquery =====
 router.get("/profile/:username", async (req: express.Request, res: express.Response) => {
     const username = req.params.username;
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get(
-                "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
-                [username],
-                (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                }
-            );
-        });
+        const user = await dbGet(
+            "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
+            [username]
+        );
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        const posts: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT * FROM posts WHERE user_id = (SELECT id FROM users WHERE username = ?) ORDER BY created_at DESC",
-                [username],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
+        // Single query for posts using user_id (already fetched)
+        const posts = await dbAll(
+            "SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC",
+            [user.id]
+        );
 
         const { level, rank } = calculateLevel(user.xp);
 
-        const userProfile = {
-            username: user.username,
-            verified: user.verified,
-            coins: user.coins,
-            rank,
-            level,
-            profile_media_url: user.profile_media_url,
-            profile_media_type: user.profile_media_type,
-        };
-
-        res.json({ user: userProfile, posts });
+        res.json({
+            user: {
+                username: user.username,
+                verified: user.verified,
+                coins: user.coins,
+                rank,
+                level,
+                profile_media_url: user.profile_media_url,
+                profile_media_type: user.profile_media_type,
+            },
+            posts,
+        });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error fetching profile:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error("Error fetching profile:", err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
-// Upload profile photo/video
+// ===== Upload profile photo/video =====
 router.post("/profile/upload", upload.single("media"), async (req: express.Request, res: express.Response) => {
     const { email } = req.body;
     const file = req.file;
@@ -93,14 +84,6 @@ router.post("/profile/upload", upload.single("media"), async (req: express.Reque
     }
 
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
-                if (err) reject(err);
-                if (!row) reject(new Error("User not found"));
-                resolve(row);
-            });
-        });
-
         const uploadResult = await new Promise<cloudinary.UploadApiResponse>((resolve, reject) => {
             const stream = cloudinary.v2.uploader.upload_stream(
                 {
@@ -109,8 +92,8 @@ router.post("/profile/upload", upload.single("media"), async (req: express.Reque
                 },
                 (error, result) => {
                     if (error) reject(error);
-                    if (!result) reject(new Error("Upload failed"));
-                    resolve(result);
+                    else if (!result) reject(new Error("Upload failed"));
+                    else resolve(result);
                 }
             );
             stream.end(file.buffer);
@@ -119,59 +102,40 @@ router.post("/profile/upload", upload.single("media"), async (req: express.Reque
         const mediaUrl = uploadResult.secure_url;
         const mediaType = file.mimetype.startsWith("image") ? "image" : "video";
 
-        await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE users SET profile_media_url = ?, profile_media_type = ? WHERE id = ?",
-                [mediaUrl, mediaType, user.id],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
-        });
+        await dbRun(
+            "UPDATE users SET profile_media_url = ?, profile_media_type = ? WHERE id = ?",
+            [mediaUrl, mediaType, req.user.id]
+        );
 
         res.json({ message: "Profile media uploaded successfully", profile_media_url: mediaUrl, profile_media_type: mediaType });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error uploading profile media:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error("Error uploading profile media:", err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
-// Verify/unverify a user (creator only)
+// ===== Verify/unverify a user (creator only) =====
 router.post("/verify", async (req: express.Request, res: express.Response) => {
     const { username, verify } = req.body;
     if (!req.user) {
         return res.status(403).json({ message: "Unauthorized: No user authenticated" });
     }
-    if (req.user.email !== "restorationmichael3@gmail.com") {
+    if (req.user.email !== ADMIN_EMAIL) {
         return res.status(403).json({ message: "Unauthorized: Only the creator can verify users" });
     }
     if (!username || typeof verify !== "boolean") {
         return res.status(400).json({ message: "Username and verify (boolean) are required" });
     }
+
     try {
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
+        const user = await dbGet("SELECT id FROM users WHERE username = ?", [username]);
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        await new Promise<void>((resolve, reject) => {
-            db.run(
-                "UPDATE users SET verified = ? WHERE username = ?",
-                [verify ? 1 : 0, username],
-                (err) => {
-                    if (err) reject(err);
-                    resolve();
-                }
-            );
-        });
+        await dbRun("UPDATE users SET verified = ? WHERE username = ?", [verify ? 1 : 0, username]);
         res.json({ message: `User ${username} ${verify ? "verified" : "unverified"} successfully` });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Error verifying user:`, err);
-        res.status(500).json({ message: "Internal server error: " + (err as Error).message });
+        console.error("Error verifying user:", err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 

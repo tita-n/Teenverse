@@ -1,380 +1,158 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import Navigation from "../components/Navigation";
-import { motion, AnimatePresence } from "framer-motion"; // For animations
-import { TrophyIcon, StarIcon, UsersIcon, DollarSignIcon, AwardIcon, RefreshCwIcon } from "lucide-react"; // For icons
+import { withAuth } from "../lib/api";
+import Layout from "../components/ui/Layout";
+import { LoadingState, AuthRequiredState, EmptyState } from "../components/ui/PageStates";
+import { Trophy, Star, Users, DollarSign, Award } from "lucide-react";
 
-interface UltimateShowdownWinner {
-    id: number;
-    user_id: number;
-    tournament_id: number;
-    rank: number;
-    awarded_at: string;
-    actual_username: string;
-}
+interface Winner { id: number; actual_username: string; rank: number; awarded_at: string; }
+interface Creator { id: number; username: string; wins: number; }
+interface Squad { id: number; username: string; game_name: string; wins: number; creator_username: string; }
+interface TopEarner { id: number; username: string; coins: number; }
+interface DevPick { id: number; actual_username: string; title: string; awarded_at: string; }
 
-interface CreatorRanking {
-    id: number;
-    username: string;
-    wins: number;
-}
-
-interface SquadRanking {
-    id: number;
-    user_id: number;
-    username: string;
-    game_name: string;
-    wins: number;
-    creator_username: string;
-}
-
-interface TopEarner {
-    id: number;
-    username: string;
-    coins: number;
-}
-
-interface DeveloperPick {
-    id: number;
-    user_id: number;
-    title: string;
-    awarded_at: string;
-    actual_username: string;
-}
-
-interface HallOfFameData {
-    ultimateShowdownWinners: UltimateShowdownWinner[];
-    topCreatorsAllTime: { [key: string]: CreatorRanking[] };
-    topCreatorsMonthly: { [key: string]: CreatorRanking[] };
-    topSquads: SquadRanking[];
-    topEarners: TopEarner[];
-    developerPicks: DeveloperPick[];
+interface HallData {
+  ultimateShowdownWinners: Winner[];
+  topCreatorsAllTime: { [key: string]: Creator[] };
+  topCreatorsMonthly: { [key: string]: Creator[] };
+  topSquads: Squad[];
+  topEarners: TopEarner[];
+  developerPicks: DevPick[];
 }
 
 export default function HallOfFame() {
-    const [hallOfFameData, setHallOfFameData] = useState<HallOfFameData | null>(null);
-    const [message, setMessage] = useState("");
-    const [loading, setLoading] = useState(true);
-    const { user, token } = useAuth();
+  const [data, setData] = useState<HallData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { user, token, loading: authLoading } = useAuth();
 
-    // Fetch Hall of Fame data
-    useEffect(() => {
-        const fetchHallOfFameData = async () => {
-            if (!user || !token) return;
-            try {
-                const res = await axios.get("/api/hall-of-fame", {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                setHallOfFameData(res.data);
-            } catch (err) {
-                setMessage(
-                    "Error fetching Hall of Fame data: " + (err.response?.data?.message || err.message)
-                );
-            } finally {
-                setLoading(false);
-            }
-        };
+  useEffect(() => {
+    if (!user || !token) { setLoading(false); return; }
+    axios.get("/api/hall-of-fame", withAuth(token))
+      .then((res) => setData(res.data))
+      .catch((err) => console.error("Error:", err))
+      .finally(() => setLoading(false));
+  }, [user, token]);
 
-        fetchHallOfFameData();
-    }, [user, token]);
+  if (authLoading) return <LoadingState message="Checking authentication..." />;
+  if (!user || !token) return <AuthRequiredState />;
+  if (loading) return <LoadingState message="Loading Hall of Fame..." />;
+  if (!data) return <EmptyState title="Failed to load" message="Unable to load Hall of Fame data." />;
 
-    // Unauthorized state
-    if (!user || !token) {
-        return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200"
-            >
-                <div className="text-center space-y-4">
-                    <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-                    <p className="text-gray-600">Please log in to access the Hall of Fame.</p>
-                    <a
-                        href="/login"
-                        className="inline-block px-6 py-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition"
-                    >
-                        Log In
-                    </a>
+  return (
+    <Layout maxWidth="4xl">
+      <div className="mb-8 text-center">
+        <h1 className="text-display">Hall of Fame</h1>
+        <p className="text-tx-secondary mt-2">TeenVerse Legends</p>
+      </div>
+
+      <div className="space-y-6">
+        {/* Showdown Champions */}
+        <Section icon={<Trophy className="w-5 h-5 text-yellow-500" />} title="Ultimate Showdown Champions">
+          {data.ultimateShowdownWinners.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {data.ultimateShowdownWinners.map((w) => (
+                <div key={w.id} className="p-3 bg-surface-muted rounded-lg">
+                  <p className="font-semibold text-brand-600">{w.actual_username} <span className="text-sm text-tx-muted">Rank {w.rank}</span></p>
+                  <p className="text-xs text-tx-muted">{new Date(w.awarded_at).toLocaleDateString()}</p>
                 </div>
-            </motion.div>
-        );
-    }
+              ))}
+            </div>
+          ) : <p className="text-sm text-tx-muted">No champions yet.</p>}
+        </Section>
 
-    // Loading state with spinner
-    if (loading) {
-        return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200"
-            >
-                <div className="flex flex-col items-center space-y-4">
-                    <RefreshCwIcon className="w-8 h-8 text-indigo-600 animate-spin" />
-                    <p className="text-gray-600 text-lg">Loading Hall of Fame...</p>
+        {/* Top Creators All-Time */}
+        <Section icon={<Star className="w-5 h-5 text-yellow-500" />} title="Top Creators (All-Time)">
+          {Object.entries(data.topCreatorsAllTime).map(([cat, creators]) => (
+            <div key={cat} className="mb-4 last:mb-0">
+              <h4 className="text-sm font-medium text-tx-secondary mb-2">{cat}</h4>
+              {creators.length > 0 ? (
+                <ul className="space-y-1">
+                  {creators.map((c, i) => (
+                    <li key={c.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-5 text-tx-muted">{i + 1}.</span>
+                      <span className="font-medium text-tx-primary">{c.username}</span>
+                      <span className="text-tx-muted">{c.wins} wins</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-xs text-tx-muted">No winners yet.</p>}
+            </div>
+          ))}
+        </Section>
+
+        {/* Top Creators Monthly */}
+        <Section icon={<Star className="w-5 h-5 text-blue-500" />} title="Top Creators (Monthly)">
+          {Object.entries(data.topCreatorsMonthly).map(([cat, creators]) => (
+            <div key={cat} className="mb-4 last:mb-0">
+              <h4 className="text-sm font-medium text-tx-secondary mb-2">{cat}</h4>
+              {creators.length > 0 ? (
+                <ul className="space-y-1">
+                  {creators.map((c, i) => (
+                    <li key={c.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-5 text-tx-muted">{i + 1}.</span>
+                      <span className="font-medium text-tx-primary">{c.username}</span>
+                      <span className="text-tx-muted">{c.wins} wins</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-xs text-tx-muted">No winners this month.</p>}
+            </div>
+          ))}
+        </Section>
+
+        {/* Top Squads */}
+        <Section icon={<Users className="w-5 h-5 text-brand-500" />} title="Top Squads">
+          {data.topSquads.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {data.topSquads.map((s) => (
+                <div key={s.id} className="p-3 bg-surface-muted rounded-lg">
+                  <p className="font-semibold text-tx-primary">{s.username} <span className="text-sm text-tx-muted">({s.game_name})</span></p>
+                  <p className="text-sm text-tx-secondary">{s.wins} wins — Led by {s.creator_username}</p>
                 </div>
-            </motion.div>
-        );
-    }
+              ))}
+            </div>
+          ) : <p className="text-sm text-tx-muted">No top squads yet.</p>}
+        </Section>
 
-    // Failed to load data
-    if (!hallOfFameData) {
-        return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200"
-            >
-                <div className="text-center space-y-4">
-                    <h1 className="text-2xl font-bold text-red-600">Failed to Load</h1>
-                    <p className="text-gray-600">Unable to load Hall of Fame data.</p>
-                    <button
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition"
-                        onClick={() => fetchHallOfFameData()}
-                    >
-                        Retry
-                    </button>
+        {/* Top Earners */}
+        <Section icon={<DollarSign className="w-5 h-5 text-green-500" />} title="Top Earners">
+          {data.topEarners.length > 0 ? (
+            <ul className="space-y-1">
+              {data.topEarners.map((e, i) => (
+                <li key={e.id} className="flex items-center gap-2 text-sm">
+                  <span className="w-5 text-tx-muted">{i + 1}.</span>
+                  <span className="font-medium text-tx-primary">{e.username}</span>
+                  <span className="text-tx-muted">{e.coins} coins</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-sm text-tx-muted">No top earners yet.</p>}
+        </Section>
+
+        {/* Developer Picks */}
+        <Section icon={<Award className="w-5 h-5 text-blue-500" />} title="Developer Picks">
+          {data.developerPicks.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {data.developerPicks.map((p) => (
+                <div key={p.id} className="p-3 bg-surface-muted rounded-lg">
+                  <p className="font-semibold text-tx-primary">{p.actual_username} <span className="text-sm text-tx-muted">{p.title}</span></p>
+                  <p className="text-xs text-tx-muted">{new Date(p.awarded_at).toLocaleDateString()}</p>
                 </div>
-            </motion.div>
-        );
-    }
+              ))}
+            </div>
+          ) : <p className="text-sm text-tx-muted">No picks yet.</p>}
+        </Section>
+      </div>
+    </Layout>
+  );
+}
 
-    return (
-        <div>
-            <Navigation />
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-200 p-6"
-            >
-                <div className="max-w-5xl mx-auto">
-                    <h1 className="text-4xl font-extrabold text-gray-800 mb-8 text-center">
-                        Hall of Fame - TeenVerse Legends
-                    </h1>
-
-                    {/* Ultimate Showdown Winners */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <TrophyIcon className="w-6 h-6 text-yellow-500 mr-2" />
-                            Ultimate Showdown Champions
-                        </h2>
-                        {hallOfFameData.ultimateShowdownWinners.length > 0 ? (
-                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {hallOfFameData.ultimateShowdownWinners.map((winner) => (
-                                    <motion.li
-                                        key={winner.id}
-                                        className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                                        whileHover={{ scale: 1.02 }}
-                                    >
-                                        <div className="flex items-center">
-                                            <span className="font-bold text-indigo-600">{winner.actual_username}</span>
-                                            <span className="ml-2 text-sm text-gray-500">
-                                                Rank {winner.rank}
-                                            </span>
-                                        </div>
-                                        <p className="text-sm text-gray-600">
-                                            Awarded: {new Date(winner.awarded_at).toLocaleDateString()}
-                                        </p>
-                                        <p className="text-sm text-green-600 mt-1">
-                                            Privileges: Legendary Gold Frame, Moderator Powers, Verified Status, Early Access
-                                        </p>
-                                    </motion.li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-gray-600">No Ultimate Showdown champions yet.</p>
-                        )}
-                    </motion.div>
-
-                    {/* Top Creators (All-Time) */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <StarIcon className="w-6 h-6 text-yellow-500 mr-2" />
-                            Top Creators (All-Time)
-                        </h2>
-                        {Object.keys(hallOfFameData.topCreatorsAllTime).map((category) => (
-                            <div key={category} className="mb-6">
-                                <h3 className="text-lg font-medium text-gray-700 mb-2">{category}</h3>
-                                {hallOfFameData.topCreatorsAllTime[category].length > 0 ? (
-                                    <ul className="space-y-3">
-                                        {hallOfFameData.topCreatorsAllTime[category].map((creator, index) => (
-                                            <motion.li
-                                                key={creator.id}
-                                                className="flex items-center text-gray-600"
-                                                whileHover={{ x: 5 }}
-                                            >
-                                                <span className="w-6 text-gray-500">{index + 1}.</span>
-                                                <span className="font-bold text-indigo-600">{creator.username}</span>
-                                                <span className="ml-2">{creator.wins} wins</span>
-                                            </motion.li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-gray-600">No winners in this category yet.</p>
-                                )}
-                            </div>
-                        ))}
-                    </motion.div>
-
-                    {/* Top Creators (Monthly) */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <StarIcon className="w-6 h-6 text-blue-500 mr-2" />
-                            Top Creators (Monthly)
-                        </h2>
-                        {Object.keys(hallOfFameData.topCreatorsMonthly).map((category) => (
-                            <div key={category} className="mb-6">
-                                <h3 className="text-lg font-medium text-gray-700 mb-2">{category}</h3>
-                                {hallOfFameData.topCreatorsMonthly[category].length > 0 ? (
-                                    <ul className="space-y-3">
-                                        {hallOfFameData.topCreatorsMonthly[category].map((creator, index) => (
-                                            <motion.li
-                                                key={creator.id}
-                                                className="flex items-center text-gray-600"
-                                                whileHover={{ x: 5 }}
-                                            >
-                                                <span className="w-6 text-gray-500">{index + 1}.</span>
-                                                <span className="font-bold text-indigo-600">{creator.username}</span>
-                                                <span className="ml-2">{creator.wins} wins</span>
-                                            </motion.li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-gray-600">No winners in this
-
- category this month.</p>
-                                )}
-                            </div>
-                        ))}
-                    </motion.div>
-
-                    {/* Top Squads */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <UsersIcon className="w-6 h-6 text-purple-500 mr-2" />
-                            Top Squads
-                        </h2>
-                        {hallOfFameData.topSquads.length > 0 ? (
-                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {hallOfFameData.topSquads.map((squad) => (
-                                    <motion.li
-                                        key={squad.id}
-                                        className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                                        whileHover={{ scale: 1.02 }}
-                                    >
-                                        <div className="flex items-center">
-                                            <span className="font-bold text-indigo-600">{squad.username}</span>
-                                            <span className="ml-2 text-sm text-gray-500">({squad.game_name})</span>
-                                        </div>
-                                        <p className="text-sm text-gray-600">{squad.wins} wins</p>
-                                        <p className="text-sm text-gray-500">Led by: {squad.creator_username}</p>
-                                    </motion.li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-gray-600">No top squads yet.</p>
-                        )}
-                    </motion.div>
-
-                    {/* Top Earners */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <DollarSignIcon className="w-6 h-6 text-green-500 mr-2" />
-                            Top Earners
-                        </h2>
-                        {hallOfFameData.topEarners.length > 0 ? (
-                            <ul className="space-y-3">
-                                {hallOfFameData.topEarners.map((earner, index) => (
-                                    <motion.li
-                                        key={earner.id}
-                                        className="flex items-center text-gray-600"
-                                        whileHover={{ x: 5 }}
-                                    >
-                                        <span className="w-6 text-gray-500">{index + 1}.</span>
-                                        <span className="font-bold text-indigo-600">{earner.username}</span>
-                                        <span className="ml-2">{earner.coins} coins</span>
-                                    </motion.li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-gray-600">No top earners yet.</p>
-                        )}
-                    </motion.div>
-
-                    {/* Developer Picks */}
-                    <motion.div
-                        initial={{ scale: 0.95, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        className="bg-white p-8 rounded-2xl shadow-xl mb-6 border border-gray-100 hover:shadow-2xl transition-shadow duration-300"
-                    >
-                        <h2 className="text-2xl font-semibold text-gray-800 mb-4 flex items-center">
-                            <AwardIcon className="w-6 h-6 text-blue-500 mr-2" />
-                            Developer Picks
-                        </h2>
-                        {hallOfFameData.developerPicks.length > 0 ? (
-                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {hallOfFameData.developerPicks.map((pick) => (
-                                    <motion.li
-                                        key={pick.id}
-                                        className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                                        whileHover={{ scale: 1.02 }}
-                                    >
-                                        <div className="flex items-center">
-                                            <span className="font-bold text-indigo-600">{pick.actual_username}</span>
-                                            <span className="ml-2 text-sm text-gray-500">{pick.title}</span>
-                                        </div>
-                                        <p className="text-sm text-gray-600">
-                                            Awarded: {new Date(pick.awarded_at).toLocaleDateString()}
-                                        </p>
-                                        {pick.title === "PrimeArchitect" && (
-                                            <p className="text-sm text-purple-600">The visionary behind Teen Verse!</p>
-                                        )}
-                                    </motion.li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-gray-600">No developer picks yet.</p>
-                        )}
-                    </motion.div>
-
-                    {message && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="mt-4 p-4 bg-red-100 text-red-600 rounded-lg flex items-center justify-between"
-                        >
-                            <p>{message}</p>
-                            <button
-                                className="text-indigo-600 hover:underline"
-                                onClick={() => fetchHallOfFameData()}
-                            >
-                                Retry
-                            </button>
-                        </motion.div>
-                    )}
-                </div>
-            </motion.div>
-        </div>
-    );
-        }
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="card p-6">
+      <h2 className="text-h3 flex items-center gap-2 mb-4">{icon} {title}</h2>
+      {children}
+    </div>
+  );
+}

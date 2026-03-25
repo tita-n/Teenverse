@@ -3,31 +3,143 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import path from "path";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import postRoutes from './routes/posts';
-import usersRouter from "./routes/users"; // Add this import
+import usersRouter from "./routes/users";
 import { db } from "./database";
 import http from 'http';
 import { Server } from 'socket.io';
-import { User, ShopItem, RouteDependencies } from './types'; // Import interfaces
-import { InventoryItem } from './types'; // Import interface
-import express, { Request, Response } from 'express';
+import { RouteDependencies } from './types';
+import express, { Request, Response, Express } from 'express';
 import { v2 as cloudinary } from 'cloudinary';
 import ffmpeg from 'fluent-ffmpeg';
 import { FfprobeData } from 'fluent-ffmpeg';
-import fs from 'fs';
 import multer from 'multer';
-import dmRoutes from "./routes/dms"; // chats
+import dmRoutes from "./routes/dms";
 import { backupDatabase, localBackup } from "./backup";
-import settingsRouter from "./routes/settings"; // for settings 
+import settingsRouter from "./routes/settings";
+import metricsRouter, { metricsMiddleware } from './routes/metrics';
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
-app.use(cors());
+
+// ============= SECURITY HEADERS =============
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://teenverse.onrender.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https:", "blob:"],
+            mediaSrc: ["'self'", "https:", "blob:"],
+            connectSrc: ["'self'", "https://teenverse.onrender.com", "https://api.cloudinary.com"],
+            frameSrc: ["'none'"],
+            objectSrc: ["'none'"],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
+
+// ============= CORS CONFIGURATION =============
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'https://teenverse.onrender.com'];
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+}));
+
+// ============= RATE LIMITING =============
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { message: "Too many attempts, please try again after 15 minutes" },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+});
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { message: "Too many login attempts, please try again after 15 minutes" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const apiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 100,
+    message: { message: "Too many requests, please slow down" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+app.use('/api', apiLimiter);
+
+// ============= BODY PARSING =============
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const PORT = process.env.PORT || 5000;
-const SECRET_KEY = process.env.SECRET_KEY || "teenverse_secret";
+
+// ============= SECURITY: REQUIRE SECRET KEY =============
+const SECRET_KEY = process.env.SECRET_KEY;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'restorationmichael3@gmail.com';
+
+if (!SECRET_KEY) {
+    console.error('[SECURITY ERROR] SECRET_KEY environment variable is required!');
+    console.error('[SECURITY ERROR] Generate a key: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"');
+    process.exit(1);
+}
+
+if (SECRET_KEY === 'teenverse_secret' || SECRET_KEY.length < 32) {
+    console.warn('[SECURITY WARNING] SECRET_KEY appears weak. Use a 64+ char hex string.');
+}
+
+// ============= XSS SANITIZATION =============
+const sanitizeHtml = (str: string): string => {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;');
+};
+
+// ============= PASSWORD VALIDATION =============
+const validatePassword = (password: string): { valid: boolean; message: string } => {
+    if (!password || password.length < 8) {
+        return { valid: false, message: "Password must be at least 8 characters long" };
+    }
+    if (!/[A-Z]/.test(password)) {
+        return { valid: false, message: "Password must contain at least one uppercase letter" };
+    }
+    if (!/[a-z]/.test(password)) {
+        return { valid: false, message: "Password must contain at least one lowercase letter" };
+    }
+    if (!/[0-9]/.test(password)) {
+        return { valid: false, message: "Password must contain at least one number" };
+    }
+    return { valid: true, message: "" };
+};
+
+// ============= ADMIN CHECK =============
+const isAdmin = (email: string): boolean => {
+    return email === ADMIN_EMAIL;
+};
 
 // Configure Cloudinary
 cloudinary.config({
@@ -67,40 +179,44 @@ const upload = multer({
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:3000", // Adjust for production
-        methods: ["GET", "POST"]
-    }
+        origin: ALLOWED_ORIGINS,
+        methods: ["GET", "POST"],
+        credentials: true,
+    },
+    pingTimeout: 60000,
+    pingInterval: 25000,
 });
 
 // Middleware to authenticate JWT token
-const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+interface AuthRequest extends Express.Request {
+    user?: { email: string; verified: number; id?: number };
+}
+
+const authenticateToken = (req: AuthRequest, res: Express.Response, next: express.NextFunction) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-        console.log(`[${new Date().toISOString()}] No token provided for ${req.path}`);
         return res.status(401).json({ message: "Authentication token required" });
     }
 
     try {
-        const decoded = jwt.verify(token, SECRET_KEY) as { email: string, verified: number };
+        const decoded = jwt.verify(token, SECRET_KEY!) as { email: string; verified: number };
         req.user = decoded;
 
-        // Fetch user ID to include in req.user for endpoints that need it
+        // Fetch user ID
         db.get("SELECT id FROM users WHERE email = ?", [decoded.email], (err, row: any) => {
             if (err) {
-                console.error(`[${new Date().toISOString()}] Error fetching user ID in authenticateToken:`, err);
+                console.error(`[${new Date().toISOString()}] Error fetching user ID:`, err);
                 return res.status(500).json({ message: "Internal server error" });
             }
             if (!row) {
                 return res.status(404).json({ message: "User not found" });
             }
-            req.user.id = row.id;
-            console.log(`[${new Date().toISOString()}] Token verified for ${req.path}, user: ${decoded.email}, id: ${row.id}`);
+            req.user!.id = row.id;
             next();
         });
     } catch (err) {
-        console.log(`[${new Date().toISOString()}] Token verification failed for ${req.path}: ${err.message}`);
         return res.status(403).json({ message: "Invalid or expired token" });
     }
 };
@@ -115,69 +231,141 @@ const routeDependencies: RouteDependencies = {
 
 // Global request logging
 console.log(`[${new Date().toISOString()}] Server starting...`);
+// ============= LOGGING =============
+const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+const LOG_LEVELS: Record<string, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+
+const log = (level: string, message: string, ...args: unknown[]) => {
+  if ((LOG_LEVELS[level] || 0) <= (LOG_LEVELS[LOG_LEVEL] || 0)) {
+    console.log(`[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}`, ...args);
+  }
+};
+
+// Global request logging
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] Request received: ${req.method} ${req.url}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    log('info', `${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
+  });
   next();
 });
 
-// Debug endpoint
-app.get("/debug-users", async (req, res) => {
-  try {
-    console.log(`[${new Date().toISOString()}] Checking db state...`);
-    if (!db) {
-      console.error(`[${new Date().toISOString()}] Error: db is undefined`);
-      return res.status(500).send("Database not initialized");
+// ============= HEALTH CHECKS =============
+interface HealthStatus {
+  status: 'ok' | 'degraded' | 'unhealthy';
+  timestamp: number;
+  uptime: number;
+  environment: string;
+  version: string;
+  services: {
+    database: 'connected' | 'error';
+    memory: { usedMB: number; totalMB: number };
+  };
+}
+
+app.get('/health', (req, res) => {
+  const memUsage = process.memoryUsage();
+  const health: HealthStatus = {
+    status: 'ok',
+    timestamp: Date.now(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0',
+    services: {
+      database: 'connected',
+      memory: {
+        usedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+        totalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+      },
+    },
+  };
+
+  db.get('SELECT 1', [], (err: Error | null) => {
+    if (err) {
+      health.services.database = 'error';
+      health.status = 'degraded';
+      return res.status(503).json(health);
     }
-
-    console.log(`[${new Date().toISOString()}] Fetching users table schema...`);
-    const schema = await new Promise((resolve, reject) => {
-      db.all("PRAGMA table_info(users)", (err, rows) => {
-        if (err) reject(err);
-        resolve(rows);
-      });
-    });
-    console.log(`[${new Date().toISOString()}] Users table schema:`, schema);
-
-    console.log(`[${new Date().toISOString()}] Fetching users table contents...`);
-    const users = await new Promise((resolve, reject) => {
-      db.all("SELECT id, email, username, dob, creator_badge FROM users", (err, rows) => {
-        if (err) reject(err);
-        resolve(rows);
-      });
-    });
-    console.log(`[${new Date().toISOString()}] Users table contents:`, users);
-
-    res.send("Debug info logged");
-  } catch (err) {
-    console.error(
-      `[${new Date().toISOString()}] Debug users error:`,
-      err.message,
-      err.stack
-    );
-    res.status(500).send("Error fetching debug info");
-  }
+    res.json(health);
+  });
 });
 
-app.get("/clear-users", async (req, res) => {
-  try {
-    await new Promise<void>((resolve, reject) => {
-      db.run("DELETE FROM users", (err) => {
-        if (err) reject(err);
-        resolve();
-      });
-    });
-    console.log(`[${new Date().toISOString()}] Users table cleared`);
-    res.send("Users table cleared");
-  } catch (err) {
-    console.error(
-      `[${new Date().toISOString()}] Clear users error:`,
-      err.message,
-      err.stack
-    );
-    res.status(500).send("Error clearing users");
-  }
+app.get('/ready', (req, res) => {
+  db.get('SELECT 1', [], (err: Error | null) => {
+    if (err) {
+      return res.status(503).json({ ready: false, error: 'Database not ready' });
+    }
+    res.json({ ready: true });
+  });
 });
- 
+
+// ============= DEBUG ENDPOINTS (ONLY IN DEVELOPMENT - ADMIN ONLY) =============
+if (process.env.NODE_ENV !== 'production') {
+  // Debug endpoint - REQUIRES ADMIN AUTH
+  app.get("/debug-users", authenticateToken, async (req: AuthRequest, res: Express.Response) => {
+    if (!isAdmin(req.user?.email || '')) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    try {
+      if (!db) {
+        return res.status(500).send("Database not initialized");
+      }
+
+      const schema = await new Promise((resolve, reject) => {
+        db.all("PRAGMA table_info(users)", (err, rows) => {
+          if (err) reject(err);
+          resolve(rows);
+        });
+      });
+
+      const users = await new Promise((resolve, reject) => {
+        db.all("SELECT id, email, username, dob, creator_badge FROM users", (err, rows) => {
+          if (err) reject(err);
+          resolve(rows);
+        });
+      });
+
+      res.send("Debug info logged");
+    } catch (err: any) {
+      res.status(500).send("Error fetching debug info");
+    }
+  });
+
+  app.get("/clear-users", authenticateToken, async (req: AuthRequest, res: Express.Response) => {
+    if (!isAdmin(req.user?.email || '')) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        db.run("DELETE FROM users", (err) => {
+          if (err) reject(err);
+          resolve();
+        });
+      });
+      res.send("Users table cleared");
+    } catch (err: any) {
+      res.status(500).send("Error clearing users");
+    }
+  });
+
+  app.get("/trigger-backup", authenticateToken, async (req: AuthRequest, res: Express.Response) => {
+    if (!isAdmin(req.user?.email || '')) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    try {
+      await backupDatabase();
+      res.send("Backup triggered successfully");
+    } catch (err: any) {
+      res.status(500).send("Backup failed");
+    }
+  });
+} // End of debug endpoints in development only
+
+// ============= METRICS (Public for monitoring) =============
+app.use(metricsMiddleware);
+app.use('/', metricsRouter);
+
 // Use post routes with authentication middleware
 app.use('/api/posts', authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
@@ -187,18 +375,18 @@ app.use("/api/settings", authenticateToken, settingsRouter); // Add this
 
 // Socket.IO setup for real-time voting
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    log('info', `Socket connected: ${socket.id}`);
 
     // Join a battle room for live updates
     socket.on('join_battle', (battleId) => {
         socket.join(`battle-${battleId}`);
-        console.log(`User ${socket.id} joined battle-${battleId}`);
+        log('debug', `User ${socket.id} joined battle-${battleId}`);
     });
 
     // Leave a battle room
     socket.on('leave_battle', (battleId) => {
         socket.leave(`battle-${battleId}`);
-        console.log(`User ${socket.id} left battle-${battleId}`);
+        log('debug', `User ${socket.id} left battle-${battleId}`);
     });
 
     // Broadcast vote updates
@@ -246,41 +434,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Trigger backup endpoint
-app.get("/trigger-backup", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Entering trigger-backup endpoint`);
-  try {
-    console.log(`[${new Date().toISOString()}] Triggering manual backup...`);
-    console.log(`[${new Date().toISOString()}] Environment variables:`, {
-      B2_KEY_ID: process.env.B2_KEY_ID ? "set" : "unset",
-      B2_APPLICATION_KEY: process.env.B2_APPLICATION_KEY ? "set" : "unset",
-      B2_BUCKET_NAME: process.env.B2_BUCKET_NAME ? "set" : "unset",
-    });
-    try {
-      await backupDatabase();
-      console.log(`[${new Date().toISOString()}] Backblaze B2 backup successful`);
-    } catch (b2Err: any) {
-      console.error(
-        `[${new Date().toISOString()}] Backblaze B2 backup failed:`,
-        b2Err.message,
-        b2Err.stack
-      );
-      console.log(`[${new Date().toISOString()}] Falling back to local backup...`);
-      await localBackup();
-      console.log(`[${new Date().toISOString()}] Local backup successful`);
-    }
-    console.log(`[${new Date().toISOString()}] Manual backup successful`);
-    res.send("Backup triggered successfully");
-  } catch (err: any) {
-    console.error(
-      `[${new Date().toISOString()}] Manual backup error:`,
-      err.message,
-      err.stack
-    );
-    res.status(500).send("Backup failed");
-  }
-});
-
 // Endpoint to fetch rants
 // Fetch rants
 app.get("/api/rants", authenticateToken, async (req, res) => {
@@ -303,22 +456,28 @@ app.get("/api/rants", authenticateToken, async (req, res) => {
             });
         });
 
-        // Fetch comments for each rant
-        const rantsWithComments = await Promise.all(
-            rants.map(async (rant) => {
-                const comments = await new Promise<any[]>((resolve, reject) => {
-                    db.all(
-                        "SELECT * FROM rant_comments WHERE rant_id = ? ORDER BY created_at ASC",
-                        [rant.id],
-                        (err, rows) => {
-                            if (err) reject(err);
-                            resolve(rows);
-                        }
-                    );
-                });
-                return { ...rant, comments };
-            })
-        );
+        // Batch fetch all comments for all rants in ONE query (fixes N+1)
+        const rantIds = rants.map((r: any) => r.id);
+        let allComments: any[] = [];
+        if (rantIds.length > 0) {
+            const placeholders = rantIds.map(() => '?').join(',');
+            allComments = await dbAll(
+                `SELECT * FROM rant_comments WHERE rant_id IN (${placeholders}) ORDER BY created_at ASC`,
+                rantIds
+            );
+        }
+
+        // Group comments by rant_id
+        const commentsByRant: { [key: number]: any[] } = {};
+        for (const comment of allComments) {
+            if (!commentsByRant[comment.rant_id]) commentsByRant[comment.rant_id] = [];
+            commentsByRant[comment.rant_id].push(comment);
+        }
+
+        const rantsWithComments = rants.map((rant: any) => ({
+            ...rant,
+            comments: commentsByRant[rant.id] || [],
+        }));
 
         console.log(`[${new Date().toISOString()}] /api/rants returned ${rantsWithComments.length} rants`);
         res.json(rantsWithComments);
@@ -373,7 +532,7 @@ app.post("/api/create-rant", authenticateToken, async (req, res) => {
         // Award XP and coins
         let xpBonus = 5;
         let coinBonus = 5;
-        if (email === "restorationmichael3@gmail.com") {
+        if (isAdmin(email)) {
             xpBonus += 5;
             coinBonus += 5;
         }
@@ -617,12 +776,12 @@ app.post("/api/login", async (req, res) => {
             return res.status(401).json({ message: "Invalid credentials" });
         }
 
-        const token = jwt.sign({ email: user.email, verified: user.verified }, SECRET_KEY, { expiresIn: "1h" });
-        res.json({ token, message: "Login successful", username: user.username });
-    } catch (err) {
-        console.error("Login error:", err);
-        res.status(500).json({ message: "Internal server error" });
-    }
+    const token = jwt.sign({ email: user.email, verified: user.verified, userId: user.id }, SECRET_KEY, { expiresIn: "1h" });
+    res.json({ token, message: "Login successful", username: user.username });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 // Get user data (for verifying token) - Modified to include creator_badge
@@ -646,7 +805,7 @@ app.get("/api/users/me", authenticateToken, async (req: any, res) => {
     }
 });
 
-// Create post endpoint (used for rants as well) - Modified to give bonus XP/coins to creator
+// Create post endpoint
 app.post("/api/create-post", authenticateToken, async (req, res) => {
     try {
         const { email, content, mode } = req.body;
@@ -664,7 +823,6 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
         if (!user) return res.status(404).json({ message: "User not found" });
 
         const postMode = mode || "main";
-        console.log(`[${new Date().toISOString()}] Creating post for user ${user.username}: mode=${postMode}, content=${content}`);
 
         await new Promise<void>((resolve, reject) => {
             db.run(
@@ -677,25 +835,13 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
             );
         });
 
-        let xpBonus = 5;
-        let coinBonus = 5;
-
-        if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5;
-            coinBonus += 5;
-        }
-
+        const xpBonus = 5;
+        const coinBonus = 5;
         const newXP = user.xp + xpBonus;
-        await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET xp = ? WHERE id = ?", [newXP, user.id], (err) => {
-                if (err) reject(err);
-                resolve();
-            });
-        });
-
         const newCoins = user.coins + coinBonus;
+
         await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE users SET coins = ? WHERE id = ?", [newCoins, user.id], (err) => {
+            db.run("UPDATE users SET xp = ?, coins = ? WHERE id = ?", [newXP, newCoins, user.id], (err) => {
                 if (err) reject(err);
                 resolve();
             });
@@ -703,7 +849,6 @@ app.post("/api/create-post", authenticateToken, async (req, res) => {
 
         res.json({ message: `Post created! +${xpBonus} XP and +${coinBonus} coins`, newXP, newCoins });
     } catch (err) {
-        console.error(`[${new Date().toISOString()}] Create post error:`, err);
         res.status(500).json({ message: "Error creating post" });
     }
 });
@@ -988,8 +1133,8 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
 
         const squad = await new Promise<any>((resolve, reject) => {
             db.run(
-                "INSERT INTO game_squads (user_id, username, game_name, uid, description, status, max_members, wins, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [user.id, user.username, gameName, uid, description, "open", 5, 0, new Date()],
+                "INSERT INTO game_squads (user_id, game_name, uid, description, status, max_members, wins, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [user.id, gameName, uid, description, "open", 5, 0, new Date()],
                 function (err) {
                     if (err) reject(err);
                     resolve({ id: this.lastID });
@@ -1013,7 +1158,7 @@ app.post("/api/game-squads", authenticateToken, async (req, res) => {
 
         let xpBonus = 10;
         let coinBonus = 10;
-        if (email === "restorationmichael3@gmail.com") {
+        if (isAdmin(email)) {
             xpBonus += 5;
             coinBonus += 5;
         }
@@ -1099,15 +1244,15 @@ app.post("/api/game-squads/join", authenticateToken, async (req, res) => {
     }
 });
 
-app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) => {
+app.post("/api/game-squads/manage-status", authenticateToken, async (req: AuthRequest, res: Express.Response) => {
     try {
         const { email, squadId, newStatus } = req.body;
 
-        if (email !== "restorationmichael3@gmail.com") {
+        if (!isAdmin(email)) {
             return res.status(403).json({ message: "Only the platform creator can manage squad status" });
         }
 
-        if (req.user.email !== email) {
+        if (req.user?.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
@@ -1142,15 +1287,15 @@ app.post("/api/game-squads/manage-status", authenticateToken, async (req, res) =
     }
 });
 
-app.post("/api/game-squads/feature", authenticateToken, async (req, res) => {
+app.post("/api/game-squads/feature", authenticateToken, async (req: AuthRequest, res: Express.Response) => {
     try {
         const { email, squadId, feature } = req.body;
 
-        if (email !== "restorationmichael3@gmail.com") {
+        if (!isAdmin(email)) {
             return res.status(403).json({ message: "Only the platform creator can feature squads" });
         }
 
-        if (req.user.email !== email) {
+        if (req.user?.email !== email) {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
@@ -1235,12 +1380,8 @@ app.post("/api/game-squads/report-win", authenticateToken, async (req, res) => {
             });
         });
 
-        let xpBonus = 5;
-        let coinBonus = 5;
-        if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5;
-            coinBonus += 5;
-        }
+        const xpBonus = 5;
+        const coinBonus = 5;
 
         const newXP = user.xp + xpBonus;
         const newCoins = user.coins + coinBonus;
@@ -1262,7 +1403,7 @@ app.get("/api/platform-analytics", authenticateToken, async (req, res) => {
     try {
         const { email } = req.user;
 
-        if (email !== "restorationmichael3@gmail.com") {
+        if (!isAdmin(req.user?.email || '')) {
             return res.status(403).json({ message: "Only the platform creator can access analytics" });
         }
 
@@ -1470,12 +1611,8 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
             });
         });
 
-        let xpBonus = 5;
-        let coinBonus = 5;
-        if (email === "restorationmichael3@gmail.com") {
-            xpBonus += 5;
-            coinBonus += 5;
-        }
+        const xpBonus = 5;
+        const coinBonus = 5;
 
         const newXP = user.xp + xpBonus;
         const newCoins = user.coins + coinBonus;
@@ -1495,32 +1632,44 @@ app.post("/api/tournaments/declare-winner", authenticateToken, async (req, res) 
 
 app.get("/api/tournaments", authenticateToken, async (req, res) => {
     try {
-        const tournaments: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT t.*, g.game_name as squad_game_name, g.username as creator_username FROM tournaments t JOIN game_squads g ON t.squad_id = g.id ORDER BY t.created_at DESC",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
+        // Single query: tournaments with creator info via JOIN
+        const tournaments = await dbAll(
+            `SELECT t.*, g.game_name as squad_game_name, u.username as creator_username
+             FROM tournaments t
+             JOIN game_squads g ON t.squad_id = g.id
+             JOIN users u ON g.user_id = u.id
+             ORDER BY t.created_at DESC`
+        );
 
-        for (const tournament of tournaments) {
-            const participants: any[] = await new Promise<any[]>((resolve, reject) => {
-                db.all(
-                    "SELECT g.id, g.game_name, g.username FROM tournament_participants tp JOIN game_squads g ON tp.squad_id = g.id WHERE tp.tournament_id = ?",
-                    [tournament.id],
-                    (err, rows) => {
-                        if (err) reject(err);
-                        resolve(rows);
-                    }
-                );
-            });
-            tournament.participants = participants;
+        if (tournaments.length === 0) {
+            return res.json([]);
         }
 
-        res.json(tournaments);
+        // Batch fetch all participants for all tournaments in ONE query (fixes N+1)
+        const tournamentIds = tournaments.map((t: any) => t.id);
+        const placeholders = tournamentIds.map(() => '?').join(',');
+        const allParticipants = await dbAll(
+            `SELECT tp.tournament_id, g.id, g.game_name, u.username
+             FROM tournament_participants tp
+             JOIN game_squads g ON tp.squad_id = g.id
+             JOIN users u ON g.user_id = u.id
+             WHERE tp.tournament_id IN (${placeholders})`,
+            tournamentIds
+        );
+
+        // Group participants by tournament_id
+        const participantsByTournament: { [key: number]: any[] } = {};
+        for (const p of allParticipants) {
+            if (!participantsByTournament[p.tournament_id]) participantsByTournament[p.tournament_id] = [];
+            participantsByTournament[p.tournament_id].push(p);
+        }
+
+        const result = tournaments.map((t: any) => ({
+            ...t,
+            participants: participantsByTournament[t.id] || [],
+        }));
+
+        res.json(result);
     } catch (err) {
         res.status(500).json({ message: "Internal server error" });
     }
@@ -2598,7 +2747,7 @@ app.get("/api/ultimate-showdown/bracket", authenticateToken, async (req: express
 app.post("/api/ultimate-showdown/start-live", authenticateToken, async (req: express.Request, res: express.Response) => {
     try {
         const { email, tournamentId } = req.body;
-        if (req.user.email !== email || email !== "restorationmichael3@gmail.com") {
+        if (!isAdmin(req.user?.email || '')) {
             return res.status(403).json({ message: "Only the platform creator can start the live event" });
         }
 
@@ -2678,7 +2827,7 @@ app.post("/api/ultimate-showdown/boost", authenticateToken, async (req: express.
 app.post("/api/ultimate-showdown/end", authenticateToken, async (req: express.Request, res: express.Response) => {
     try {
         const { email, tournamentId, winnerId } = req.body;
-        if (req.user.email !== email || email !== "restorationmichael3@gmail.com") {
+        if (!isAdmin(req.user?.email || '')) {
             return res.status(403).json({ message: "Only the platform creator can end the event" });
         }
 
@@ -3459,8 +3608,37 @@ app.get("*", (req, res) => {
 
 // Start the server
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    log('info', `Teenverse API server running on port ${PORT}`);
+    log('info', `Environment: ${process.env.NODE_ENV || 'development'}`);
+    log('info', `Health check: http://localhost:${PORT}/health`);
 });
+
+// Graceful shutdown handlers
+process.on('SIGTERM', () => {
+    log('info', 'SIGTERM received. Starting graceful shutdown...');
+    server.close(() => {
+        log('info', 'HTTP server closed');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    log('info', 'SIGINT received. Starting graceful shutdown...');
+    server.close(() => {
+        log('info', 'HTTP server closed');
+        process.exit(0);
+    });
+});
+
+process.on('uncaughtException', (err) => {
+    log('error', 'Uncaught Exception:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+    log('error', 'Unhandled Rejection:', reason);
+});
+
 // Express route to catch users
 declare global {
     namespace Express {
@@ -3468,4 +3646,4 @@ declare global {
             user?: { email: string; verified: number; id?: number };
         }
     }
-}  
+}

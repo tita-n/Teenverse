@@ -2,6 +2,84 @@
 @tailwind components;
 @tailwind utilities;
 
-.dark {
-  color-scheme: dark;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-surface text-tx-primary font-sans;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c4b5fd transparent;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center font-medium rounded-lg px-4 py-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500 active:bg-brand-800;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-tx-primary border border-surface-border hover:bg-surface-muted focus:ring-brand-500;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-tx-secondary hover:bg-surface-muted hover:text-tx-primary focus:ring-brand-500;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+  .btn-success {
+    @apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-lg;
+  }
+
+  .input {
+    @apply w-full px-4 py-3 bg-white border border-surface-border rounded-lg text-tx-primary placeholder:text-tx-muted transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500;
+  }
+  .input-error {
+    @apply border-red-400 focus:ring-red-500 focus:border-red-500;
+  }
+
+  .card {
+    @apply bg-surface-card rounded-xl shadow-card border border-surface-border;
+  }
+  .card-hover {
+    @apply card transition-shadow duration-200 hover:shadow-card-hover;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-brand {
+    @apply badge bg-brand-100 text-brand-700;
+  }
+  .badge-success {
+    @apply badge bg-green-100 text-green-700;
+  }
+  .badge-danger {
+    @apply badge bg-red-100 text-red-700;
+  }
+  .badge-warning {
+    @apply badge bg-yellow-100 text-yellow-700;
+  }
+  .badge-neutral {
+    @apply badge bg-gray-100 text-gray-700;
+  }
+
+  .skeleton {
+    @apply bg-gray-200 rounded animate-pulse;
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
 }

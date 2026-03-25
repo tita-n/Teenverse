@@ -1,93 +1,74 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import axios from "axios";
 
 interface AuthContextType {
-    user: { email: string; username?: string } | null;
-    token: string | null;
-    login: (user: { email: string; username?: string }, token: string) => void;
-    logout: () => void;
+  user: { email: string; username?: string; id?: number } | null;
+  token: string | null;
+  login: (user: { email: string; username?: string; id?: number }, token: string) => void;
+  logout: () => void;
+  loading: boolean;
 }
 
-const defaultContextValue: AuthContextType = {
-    user: null,
-    token: null,
-    login: () => {},
-    logout: () => {},
-};
-
-const AuthContext = createContext<AuthContextType>(defaultContextValue);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  token: null,
+  login: () => {},
+  logout: () => {},
+  loading: true,
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<{ email: string; username?: string } | null>(null);
-    const [token, setToken] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AuthContextType["user"]>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const storedUser = localStorage.getItem("user");
-        const storedToken = localStorage.getItem("token");
-        console.log("AuthProvider - Initial load - Stored User:", storedUser);
-        console.log("AuthProvider - Initial load - Stored Token:", storedToken);
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    const storedToken = localStorage.getItem("token");
 
-        if (storedUser && storedToken) {
-            const parsedUser = JSON.parse(storedUser);
-            console.log("AuthProvider - Verifying token for user:", parsedUser);
-            axios.get("https://teenverse.onrender.com/api/users/me", {
-                headers: { Authorization: `Bearer ${storedToken}` }
-            })
-                .then((res) => {
-                    console.log("AuthProvider - Token verified, user data:", res.data);
-                    setUser(res.data);
-                    setToken(storedToken);
-                })
-                .catch((err) => {
-                    console.error("AuthProvider - Token verification failed:", err.response?.data || err.message);
-                    localStorage.removeItem("user");
-                    localStorage.removeItem("token");
-                    setUser(null);
-                    setToken(null);
-                })
-                .finally(() => {
-                    setLoading(false);
-                });
-        } else {
-            console.log("AuthProvider - No stored user or token found");
-            setLoading(false);
-        }
-    }, []);
-
-    const login = (user: { email: string; username?: string }, token: string) => {
-        console.log("AuthProvider - Login called with user:", user, "token:", token);
-        setUser(user);
-        setToken(token);
-        localStorage.setItem("user", JSON.stringify(user));
-        localStorage.setItem("token", token);
-    };
-
-    const logout = () => {
-        console.log("AuthProvider - Logging out");
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem("user");
-        localStorage.removeItem("token");
-    };
-
-    const contextValue: AuthContextType = { user, token, login, logout };
-
-    if (loading) {
-        return <div>Loading authentication...</div>;
+    if (storedUser && storedToken) {
+      const parsedUser = JSON.parse(storedUser);
+      axios
+        .get("/api/users/me", { headers: { Authorization: `Bearer ${storedToken}` } })
+        .then((res) => {
+          setUser(res.data);
+          setToken(storedToken);
+        })
+        .catch(() => {
+          localStorage.removeItem("user");
+          localStorage.removeItem("token");
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
+  }, []);
 
-    return (
-        <AuthContext.Provider value={contextValue}>
-            {children}
-        </AuthContext.Provider>
-    );
+  const login = useCallback((userData: { email: string; username?: string; id?: number }, tokenStr: string) => {
+    setUser(userData);
+    setToken(tokenStr);
+    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("token", tokenStr);
+  }, []);
+
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+  }, []);
+
+  const value = useMemo(() => ({ user, token, login, logout, loading }), [user, token, login, logout, loading]);
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-    const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error("useAuth must be used within an AuthProvider");
-    }
-    return context;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
+  return context;
 }

@@ -10,8 +10,12 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-    "strict": false,
-    "baseUrl": "./"
+    "baseUrl": "./",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "declaration": true,
+    "sourceMap": true
   },
   "include": ["backend/**/*.ts"],
   "exclude": ["node_modules", "frontend"],

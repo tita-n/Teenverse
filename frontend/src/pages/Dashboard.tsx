@@ -1,676 +1,312 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import Navigation from "../components/Navigation";
-import Comment from "../components/Comment";
-import { Link } from "react-router-dom";
+import { withAuth } from "../lib/api";
+import Layout from "../components/ui/Layout";
+import PostCard from "../components/PostCard";
+import { LoadingState, AuthRequiredState, EmptyState } from "../components/ui/PageStates";
+import { MessageSquare, PenSquare } from "lucide-react";
 
 interface Post {
-    id: number;
-    username: string;
-    content: string;
-    mode: string;
-    created_at: string;
-    reactions: { [reaction: string]: string[] };
-    user_id: number;
-    verified?: number;
-    likes: number;
+  id: number;
+  username: string;
+  content: string;
+  mode: string;
+  created_at: string;
+  reactions: { [reaction: string]: string[] };
+  user_id: number;
+  verified?: number;
+  likes: number;
+  profile_media_url?: string;
+  profile_media_type?: string;
 }
 
 interface CommentType {
-    id: number;
-    post_id: number;
-    user_id: number;
-    username: string;
-    content: string;
-    created_at: string;
-    pinned: number;
-    replies: Reply[];
-    likes: number;
+  id: number;
+  post_id: number;
+  user_id: number;
+  username: string;
+  content: string;
+  created_at: string;
+  pinned: number;
+  replies: Reply[];
+  likes: number;
 }
 
 interface Reply {
-    id: number;
-    comment_id: number;
-    user_id: number;
-    username: string;
-    content: string;
-    created_at: string;
+  id: number;
+  comment_id: number;
+  user_id: number;
+  username: string;
+  content: string;
+  created_at: string;
 }
 
 interface Squad {
-    id: number;
-    game_name: string;
-    description: string;
+  id: number;
+  game_name: string;
+  description: string;
 }
 
 export default function Dashboard() {
-    const [content, setContent] = useState("");
-    const [message, setMessage] = useState("");
-    const [posts, setPosts] = useState<Post[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [hasMore, setHasMore] = useState(true);
-    const [offset, setOffset] = useState(0);
-    const limit = 10; // Matches backend default
-    const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
-    const [commentContent, setCommentContent] = useState<{ [postId: number]: string }>({});
-    const [showComments, setShowComments] = useState<{ [postId: number]: boolean }>({});
-    const [visibleComments, setVisibleComments] = useState<{ [postId: number]: number }>({});
-    const [showReactions, setShowReactions] = useState<number | null>(null);
-    const [editingPost, setEditingPost] = useState<number | null>(null);
-    const [editContent, setEditContent] = useState("");
-    const [squads, setSquads] = useState<Squad[]>([]);
-    const [showMenu, setShowMenu] = useState<number | null>(null);
-    const { user, token } = useAuth();
+  const [content, setContent] = useState("");
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const [comments, setComments] = useState<{ [postId: number]: CommentType[] }>({});
+  const [squads, setSquads] = useState<Squad[]>([]);
+  const { user, token, loading: authLoading } = useAuth();
+  const limit = 10;
 
-    const observer = useRef<IntersectionObserver | null>(null);
-    const lastPostElementRef = useCallback(
-        (node: HTMLDivElement | null) => {
-            if (loading) return;
-            if (observer.current) observer.current.disconnect();
-            observer.current = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting && hasMore) {
-                    setOffset((prev) => prev + limit);
-                }
-            });
-            if (node) observer.current.observe(node);
-        },
-        [loading, hasMore]
-    );
+  const observer = useRef<IntersectionObserver | null>(null);
+  const lastPostRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (loading) return;
+      if (observer.current) observer.current.disconnect();
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && hasMore) setOffset((prev) => prev + limit);
+      });
+      if (node) observer.current.observe(node);
+    },
+    [loading, hasMore]
+  );
 
-    const reactionsList = ["Deadass", "Big Mood", "Mid", "Facts", "Cap", "Slay", "No Cap", "Vibes", "Bet", "L", "W"];
-    const commentsPerPage = 3;
-
-    const fetchPosts = useCallback(async () => {
+  const fetchPosts = useCallback(async () => {
     if (!user || !token || !hasMore) return;
     try {
-        setLoading(true);
-        const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        const postsData = res.data.map((post: Post) => ({
-            ...post,
-            reactions: post.reactions ? JSON.parse(post.reactions) : {},
-            verified: post.verified,
-        }));
+      setLoading(true);
+      const auth = withAuth(token);
+      const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, auth);
+      const postsData = res.data.map((p: Post) => ({
+        ...p,
+        reactions: p.reactions ? JSON.parse(p.reactions as any) : {},
+      }));
+      setPosts((prev) => {
+        const ids = new Set(prev.map((p) => p.id));
+        return [...prev, ...postsData.filter((p: Post) => !ids.has(p.id))];
+      });
+      setHasMore(postsData.length === limit);
 
-        setPosts((prev) => {
-            const existingIds = new Set(prev.map((p) => p.id));
-            const newPosts = postsData.filter((post: Post) => !existingIds.has(post.id));
-            return [...prev, ...newPosts];
-        });
-        setHasMore(postsData.length === limit);
-        
-        // Fetch comments for new posts
-        const newComments: { [postId: number]: CommentType[] } = { ...comments };
-        for (const post of postsData) {
-            if (!newComments[post.id]) {
-                const commentRes = await axios.get(`/api/posts/comments/${post.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                newComments[post.id] = commentRes.data;
-                setVisibleComments((prev) => ({ ...prev, [post.id]: commentsPerPage }));
-            }
+      const newComments: { [postId: number]: CommentType[] } = {};
+      for (const post of postsData) {
+        if (!comments[post.id]) {
+          const commentRes = await axios.get(`/api/posts/comments/${post.id}`, auth);
+          newComments[post.id] = commentRes.data;
         }
-        setComments(newComments);
-    } catch (err) {
-        setMessage("Error fetching posts: " + (err.response?.data?.message || err.message));
+      }
+      setComments((prev) => ({ ...prev, ...newComments }));
+    } catch (err: any) {
+      console.error("Error fetching posts:", err);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-}, [user, token, offset, comments, hasMore]);
-    useEffect(() => {
-        fetchPosts();
-    }, [fetchPosts]);
+  }, [user, token, offset, hasMore, comments]);
 
-    useEffect(() => {
-        const fetchSquads = async () => {
-            try {
-                const res = await axios.get("/api/game-squads", {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                setSquads(res.data);
-            } catch (err) {
-                console.error("Error fetching squads:", err);
-            }
-        };
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
-        if (user && token) {
-            fetchSquads();
-        }
-    }, [user, token]);
+  useEffect(() => {
+    if (!user || !token) return;
+    axios.get("/api/game-squads", withAuth(token))
+      .then((res) => setSquads(res.data))
+      .catch((err) => console.error("Error fetching squads:", err));
+  }, [user, token]);
 
-    const handlePost = async () => {
-    if (!user || !token) {
-        setMessage("Please log in to post.");
-        return;
-    }
+  const handlePost = async () => {
+    if (!user || !token || !content.trim()) return;
     try {
-        const res = await axios.post(
-            "/api/create-post",
-            {
-                email: user.email,
-                content,
-                mode: "main",
-            },
-            {
-                headers: { Authorization: `Bearer ${token}` },
-            }
-        );
-        setMessage(res.data.message);
-        setContent("");
-        
-        // Fetch the latest posts without resetting offset
-        const newPostsRes = await axios.get(`/api/posts?limit=${limit}&offset=0`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        const newPostsData = newPostsRes.data.map((post: Post) => ({
-            ...post,
-            reactions: post.reactions ? JSON.parse(post.reactions) : {},
-            verified: post.verified,
-        }));
-        setPosts(newPostsData); // Replace posts instead of appending
-        setOffset(0); // Reset offset for future fetches
-        setHasMore(newPostsData.length === limit);
-    } catch (err) {
-        setMessage("Error posting: " + (err.response?.data?.message || err.message));
-    }
-};
+      setPosting(true);
+      await axios.post("/api/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
+      setContent("");
+      const res = await axios.get(`/api/posts?limit=${limit}&offset=0`, withAuth(token));
+      const fresh = res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} }));
+      setPosts(fresh);
+      setOffset(0);
+      setHasMore(fresh.length === limit);
+      const newComments: { [id: number]: CommentType[] } = {};
+      for (const post of fresh) {
+        if (!comments[post.id]) {
+          const cr = await axios.get(`/api/posts/comments/${post.id}`, withAuth(token));
+          newComments[post.id] = cr.data;
+        }
+      }
+      setComments((prev) => ({ ...prev, ...newComments }));
+    } catch (err) { console.error("Error posting:", err); }
+    finally { setPosting(false); }
+  };
 
-    const handleLike = async (postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to like a post.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/like",
-                {
-                    postId,
-                    email: user.email,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            const updatedPosts = posts.map((post) =>
-                post.id === postId ? { ...post, likes: (post.likes || 0) + 1 } : post
-            );
-            setPosts(updatedPosts);
-        } catch (err) {
-            setMessage("Error liking post: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleLike = async (postId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/like", { postId, email: user.email }, withAuth(token));
+      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p)));
+    } catch (err) { console.error("Error liking:", err); }
+  };
 
-    const handleComment = async (postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to comment.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/comments",
-                {
-                    email: user.email,
-                    postId,
-                    content: commentContent[postId] || "",
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setCommentContent({ ...commentContent, [postId]: "" });
-            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setComments({ ...comments, [postId]: commentRes.data });
-        } catch (err) {
-            setMessage("Error adding comment: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleReact = async (postId: number, reaction: string) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/react", { email: user.email, postId, reaction }, withAuth(token));
+      const res = await axios.get(`/api/posts?limit=${posts.length}&offset=0`, withAuth(token));
+      setPosts(res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} })));
+    } catch (err) { console.error("Error reacting:", err); }
+  };
 
-    const handleReply = async (commentId: number, postId: number, content: string) => {
-        if (!user || !token) {
-            setMessage("Please log in to reply.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/comments/reply",
-                {
-                    email: user.email,
-                    commentId,
-                    content,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setComments({ ...comments, [postId]: commentRes.data });
-        } catch (err) {
-            setMessage("Error adding reply: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleComment = async (postId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/comments", { email: user.email, postId, content: "" }, withAuth(token));
+      const res = await axios.get(`/api/posts/comments/${postId}`, withAuth(token));
+      setComments((prev) => ({ ...prev, [postId]: res.data }));
+    } catch (err) { console.error("Error commenting:", err); }
+  };
 
-    const handleCommentLike = async (commentId: number, postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to like a comment.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/comments/like",
-                {
-                    email: user.email,
-                    commentId,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setComments({ ...comments, [postId]: commentRes.data });
-        } catch (err) {
-            setMessage("Error liking comment: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleCommentLike = async (commentId: number, postId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/comments/like", { email: user.email, commentId }, withAuth(token));
+      const res = await axios.get(`/api/posts/comments/${postId}`, withAuth(token));
+      setComments((prev) => ({ ...prev, [postId]: res.data }));
+    } catch (err) { console.error("Error liking comment:", err); }
+  };
 
-    const handleReact = async (postId: number, reaction: string) => {
-        if (!user || !token) {
-            setMessage("Please log in to react.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/react",
-                {
-                    email: user.email,
-                    postId,
-                    reaction,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setShowReactions(null);
-            const updatedPosts = await axios.get(`/api/posts?limit=${posts.length}&offset=0`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const postsData = updatedPosts.data.map((post: Post) => ({
-                ...post,
-                reactions: post.reactions ? JSON.parse(post.reactions) : {},
-                verified: post.verified,
-            }));
-            setPosts(postsData);
-        } catch (err) {
-            setMessage("Error adding reaction: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handlePinComment = async (commentId: number, postId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/comments/pin", { email: user.email, commentId, postId }, withAuth(token));
+      const res = await axios.get(`/api/posts/comments/${postId}`, withAuth(token));
+      setComments((prev) => ({ ...prev, [postId]: res.data }));
+    } catch (err) { console.error("Error pinning:", err); }
+  };
 
-    const startEditing = (post: Post) => {
-        setEditingPost(post.id);
-        setEditContent(post.content);
-        setShowMenu(null);
-    };
+  const handleReply = async (commentId: number, postId: number, replyContent: string) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/comments/reply", { email: user.email, commentId, content: replyContent }, withAuth(token));
+      const res = await axios.get(`/api/posts/comments/${postId}`, withAuth(token));
+      setComments((prev) => ({ ...prev, [postId]: res.data }));
+    } catch (err) { console.error("Error replying:", err); }
+  };
 
-    const handleEdit = async (postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to edit.");
-            return;
-        }
-        try {
-            await axios.put(
-                `/api/posts/edit/${postId}`,
-                {
-                    email: user.email,
-                    content: editContent,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setEditingPost(null);
-            setEditContent("");
-            const updatedPosts = posts.map((post) =>
-                post.id === postId ? { ...post, content: editContent } : post
-            );
-            setPosts(updatedPosts);
-        } catch (err) {
-            setMessage("Error editing post: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleEdit = async (postId: number, newContent: string) => {
+    if (!user || !token) return;
+    try {
+      await axios.put(`/api/posts/edit/${postId}`, { email: user.email, content: newContent }, withAuth(token));
+      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, content: newContent } : p)));
+    } catch (err) { console.error("Error editing:", err); }
+  };
 
-    const handleDelete = async (postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to delete.");
-            return;
-        }
-        try {
-            await axios.delete(`/api/posts/delete/${postId}`, {
-                data: { email: user.email },
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setShowMenu(null);
-            setPosts(posts.filter((post) => post.id !== postId));
-        } catch (err) {
-            setMessage("Error deleting post: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleDelete = async (postId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.delete(`/api/posts/delete/${postId}`, { data: { email: user.email }, ...withAuth(token) });
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    } catch (err) { console.error("Error deleting:", err); }
+  };
 
-    const handlePinComment = async (commentId: number, postId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to pin a comment.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/comments/pin",
-                {
-                    email: user.email,
-                    commentId,
-                    postId,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            const commentRes = await axios.get(`/api/posts/comments/${postId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setComments({ ...comments, [postId]: commentRes.data });
-        } catch (err) {
-            setMessage("Error pinning comment: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const handleShare = async (postId: number, squadId: number) => {
+    if (!user || !token) return;
+    try {
+      await axios.post("/api/posts/share", { email: user.email, postId, squadId }, withAuth(token));
+    } catch (err) { console.error("Error sharing:", err); }
+  };
 
-    const handleShare = async (postId: number, squadId: number) => {
-        if (!user || !token) {
-            setMessage("Please log in to share.");
-            return;
-        }
-        try {
-            await axios.post(
-                "/api/posts/share",
-                {
-                    email: user.email,
-                    postId,
-                    squadId,
-                },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setMessage("Post shared successfully!");
-        } catch (err) {
-            setMessage("Error sharing post: " + (err.response?.data?.message || err.message));
-        }
-    };
+  if (authLoading) return <LoadingState message="Checking authentication..." />;
+  if (!user || !token) return <AuthRequiredState />;
 
-    const toggleComments = (postId: number) => {
-        setShowComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
-    };
+  return (
+    <Layout maxWidth="2xl">
+      <div className="mb-6">
+        <h1 className="text-h1">Welcome, {user.username || user.email}!</h1>
+        <p className="text-tx-secondary mt-1">What's happening today?</p>
+      </div>
 
-    const loadMoreComments = (postId: number) => {
-        setVisibleComments((prev) => ({
-            ...prev,
-            [postId]: (prev[postId] || commentsPerPage) + commentsPerPage,
-        }));
-    };
-
-    if (!user || !token) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center text-red-500 text-xl">Please log in to access the dashboard.</div>
+      {/* Create Post */}
+      <div className="card p-4 sm:p-6 mb-6">
+        <div className="flex gap-3">
+          <div className="w-10 h-10 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 font-semibold text-sm flex-shrink-0">
+            {(user.username || user.email || "U").charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1">
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="What's on your mind?"
+              className="input min-h-[80px] resize-none"
+              rows={2}
+            />
+            <div className="flex justify-end mt-3">
+              <button
+                onClick={handlePost}
+                disabled={!content.trim() || posting}
+                className="btn-primary"
+              >
+                {posting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Posting...
+                  </>
+                ) : (
+                  <>
+                    <PenSquare className="w-4 h-4 mr-2" />
+                    Post
+                  </>
+                )}
+              </button>
             </div>
-        );
-    }
-
-    return (
-        <div>
-            <Navigation />
-            <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-                <div className="max-w-2xl mx-auto">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">
-                        Welcome to TeenVerse, {user.username || user.email}!
-                    </h1>
-                    <p className="text-center text-green-600 mb-6">{message}</p>
-
-                    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md mb-6">
-                        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">Create a Post</h2>
-                        <textarea
-                            value={content}
-                            onChange={(e) => setContent(e.target.value)}
-                            placeholder="What's on your mind?"
-                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-                        />
-                        <button
-                            onClick={handlePost}
-                            className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition"
-                        >
-                            Post
-                        </button>
-                    </div>
-
-                    <div className="space-y-6">
-                        {posts.length > 0 ? (
-                            posts.map((post, index) => (
-                                <div
-                                    key={post.id}
-                                    ref={index === posts.length - 1 ? lastPostElementRef : null}
-                                    className="bg-white rounded-lg shadow-md p-4 sm:p-6"
-                                >
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex-1">
-                                            <Link to={`/profile/${post.username}`}>
-                                                <p className="font-semibold text-gray-800 inline">
-                                                    {post.username}{" "}
-                                                    {post.verified ? (
-                                                        <span className="inline-block bg-black text-white rounded-full h-5 w-5 text-center leading-5 text-xs">
-                                                            ✓
-                                                        </span>
-                                                    ) : null}
-                                                </p>
-                                            </Link>
-                                            {editingPost === post.id ? (
-                                                <div className="mt-2">
-                                                    <textarea
-                                                        value={editContent}
-                                                        onChange={(e) => setEditContent(e.target.value)}
-                                                        className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2"
-                                                    />
-                                                    <div className="flex space-x-2">
-                                                        <button
-                                                            onClick={() => handleEdit(post.id)}
-                                                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-                                                        >
-                                                            Save
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setEditingPost(null)}
-                                                            className="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
-                                                        >
-                                                            Cancel
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <p className="text-gray-700 whitespace-pre-wrap mt-1">{post.content}</p>
-                                                    <p className="text-gray-500 text-sm mt-1">
-                                                        {new Date(post.created_at).toLocaleString()}
-                                                    </p>
-                                                </>
-                                            )}
-                                        </div>
-                                        {post.user_id === user.id && (
-                                            <div className="relative">
-                                                <button
-                                                    onClick={() =>
-                                                        setShowMenu(post.id === showMenu ? null : post.id)
-                                                    }
-                                                    className="text-gray-600 hover:text-gray-800 text-sm"
-                                                >
-                                                    ...
-                                                </button>
-                                                {showMenu === post.id && (
-                                                    <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow-lg p-2 z-10">
-                                                        <button
-                                                            onClick={() => startEditing(post)}
-                                                            className="block text-gray-800 px-2 py-1 hover:bg-gray-100"
-                                                        >
-                                                            Edit
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDelete(post.id)}
-                                                            className="block text-red-600 px-2 py-1 hover:bg-gray-100"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center justify-between mt-3 border-t pt-2">
-                                        <div className="flex items-center space-x-2">
-                                            <button
-                                                onClick={() => handleLike(post.id)}
-                                                className="text-blue-600 hover:text-blue-800 flex items-center"
-                                            >
-                                                👍 {post.likes || 0}
-                                            </button>
-                                            <div className="relative">
-                                                <button
-                                                    onClick={() =>
-                                                        setShowReactions(post.id === showReactions ? null : post.id)
-                                                    }
-                                                    className="text-yellow-600 hover:text-yellow-800 flex items-center"
-                                                >
-                                                    😊 React
-                                                </button>
-                                                {showReactions === post.id && (
-                                                    <div className="absolute left-0 mt-2 bg-white border rounded-lg shadow-lg p-2 flex space-x-1 z-10">
-                                                        {reactionsList.map((reaction) => (
-                                                            <button
-                                                                key={reaction}
-                                                                onClick={() => handleReact(post.id, reaction)}
-                                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-200 transition"
-                                                            >
-                                                                {reaction}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center space-x-1">
-                                                {Object.entries(post.reactions).map(
-                                                    ([reaction, users]: [string, string[]]) =>
-                                                        users.length > 0 && (
-                                                            <span key={reaction} className="text-sm text-gray-600">
-                                                                {reaction}: {users.length}
-                                                            </span>
-                                                        )
-                                                )}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => toggleComments(post.id)}
-                                            className="text-indigo-600 hover:text-indigo-800 text-sm"
-                                        >
-                                            {showComments[post.id]
-                                                ? "Hide comments"
-                                                : `View comments (${comments[post.id]?.length || 0})`}
-                                        </button>
-                                    </div>
-
-                                    {showComments[post.id] && (
-                                        <div className="mt-4">
-                                            {comments[post.id]?.length > 0 ? (
-                                                <>
-                                                    {comments[post.id]
-                                                        .sort((a, b) => b.pinned - a.pinned)
-                                                        .slice(0, visibleComments[post.id])
-                                                        .map((comment) => (
-                                                            <Comment
-                                                                key={comment.id}
-                                                                comment={comment}
-                                                                postId={post.id}
-                                                                user={user}
-                                                                token={token}
-                                                                onCommentLike={handleCommentLike}
-                                                                onPinComment={handlePinComment}
-                                                                onReply={handleReply}
-                                                            />
-                                                        ))}
-                                                    {comments[post.id].length > visibleComments[post.id] && (
-                                                        <button
-                                                            onClick={() => loadMoreComments(post.id)}
-                                                            className="text-indigo-600 hover:text-indigo-800 text-sm mt-2"
-                                                        >
-                                                            View more comments
-                                                        </button>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <p className="text-gray-600 text-sm">No comments yet.</p>
-                                            )}
-
-                                            <div className="mt-4">
-                                                <textarea
-                                                    value={commentContent[post.id] || ""}
-                                                    onChange={(e) =>
-                                                        setCommentContent({
-                                                            ...commentContent,
-                                                            [post.id]: e.target.value,
-                                                        })
-                                                    }
-                                                    placeholder="Add a comment..."
-                                                    className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                                                />
-                                                <button
-                                                    onClick={() => handleComment(postId)}
-                                                    className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-indigo-800 transition mt-2"
-                                                >
-                                                    Comment
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="mt-3">
-                                        <select
-                                            onChange={(e) => handleShare(post.id, parseInt(e.target.value))}
-                                            className="border rounded-lg p-1 text-sm text-gray-600"
-                                            defaultValue=""
-                                        >
-                                            <option value="" disabled>
-                                                Share to Squad
-                                            </option>
-                                            {squads.map((squad) => (
-                                                <option key={squad.id} value={squad.id}>
-                                                    {squad.game_name} - {squad.description}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <p className="text-gray-600 text-center">No posts yet.</p>
-                        )}
-                        {loading && <p className="text-center text-gray-600">Loading...</p>}
-                        {!hasMore && posts.length > 0 && (
-                            <p className="text-center text-gray-600">No more posts to load.</p>
-                        )}
-                    </div>
-                </div>
-            </div>
+          </div>
         </div>
-    );
-           }
+      </div>
+
+      {/* Posts Feed */}
+      <div className="space-y-4">
+        {posts.length > 0 ? (
+          posts.map((post, index) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              user={user}
+              token={token}
+              comments={comments[post.id] || []}
+              squads={squads}
+              onLike={handleLike}
+              onReact={handleReact}
+              onComment={handleComment}
+              onCommentLike={handleCommentLike}
+              onPinComment={handlePinComment}
+              onReply={handleReply}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onShare={handleShare}
+              lastRef={index === posts.length - 1 ? lastPostRef : undefined}
+            />
+          ))
+        ) : !loading ? (
+          <EmptyState
+            title="No posts yet"
+            message="Be the first to share something with the community!"
+            icon={<MessageSquare className="w-8 h-8 text-tx-muted" />}
+          />
+        ) : null}
+        {loading && (
+          <div className="text-center py-8">
+            <div className="inline-flex items-center gap-2 text-tx-muted">
+              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Loading more posts...
+            </div>
+          </div>
+        )}
+        {!hasMore && posts.length > 0 && (
+          <p className="text-center text-tx-muted text-sm py-4">You've reached the end!</p>
+        )}
+      </div>
+    </Layout>
+  );
+}

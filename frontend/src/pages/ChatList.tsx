@@ -2,125 +2,80 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import Navigation from "../components/Navigation";
+import { withAuth } from "../lib/api";
+import Layout from "../components/ui/Layout";
+import { LoadingState, AuthRequiredState, EmptyState } from "../components/ui/PageStates";
+import { MessageCircle, Pin } from "lucide-react";
 
 interface Conversation {
-    id: number;
-    other_username: string;
-    is_boosted: number;
-    latest_message: string;
-    latest_message_time: string;
+  id: number;
+  other_username: string;
+  is_boosted: number;
+  latest_message: string;
+  latest_message_time: string;
 }
 
 export default function ChatList() {
-    const { user, token } = useAuth();
-    const navigate = useNavigate();
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [error, setError] = useState<string>("");
+  const { user, token, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchConversations = async () => {
-            if (!user || !token) {
-                setError("Please log in to view chats. Redirecting to login...");
-                setTimeout(() => navigate("/"), 2000);
-                return;
-            }
+  useEffect(() => {
+    if (!user || !token) { setLoading(false); return; }
+    axios.get(`/api/dms/conversations?email=${user.email}`, withAuth(token))
+      .then((res) => setConversations(res.data))
+      .catch((err) => console.error("Error fetching conversations:", err))
+      .finally(() => setLoading(false));
+  }, [user, token]);
 
-            try {
-                const response = await axios.get(`/api/dms/conversations?email=${user.email}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                setConversations(response.data);
-            } catch (err) {
-                console.error("Error fetching conversations:", err);
-                setError("Failed to load chats: " + (err.response?.data?.message || err.message));
-            }
-        };
+  if (authLoading) return <LoadingState message="Checking authentication..." />;
+  if (!user || !token) return <AuthRequiredState />;
+  if (loading) return <LoadingState message="Loading chats..." />;
 
-        fetchConversations();
-    }, [user, token, navigate]);
+  return (
+    <Layout maxWidth="2xl">
+      <div className="mb-6">
+        <h1 className="text-h1">Private Gist</h1>
+        <p className="text-tx-secondary mt-1">Your conversations</p>
+      </div>
 
-    if (!user || !token) {
-        return (
-            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f0f2f5" }}>
-                <div style={{ color: "red", fontSize: "20px", textAlign: "center" }}>
-                    Please log in to view chats.
+      {conversations.length > 0 ? (
+        <div className="space-y-2">
+          {conversations.map((conv) => (
+            <button
+              key={conv.id}
+              onClick={() => navigate(`/chat/${conv.id}`, { state: { otherUsername: conv.other_username } })}
+              className="card-hover w-full flex items-center gap-4 p-4 text-left transition-all duration-200"
+            >
+              <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-semibold flex-shrink-0">
+                {conv.other_username.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-tx-primary truncate">{conv.other_username}</h3>
+                  {conv.is_boosted ? (
+                    <span className="badge badge-success text-xs flex items-center gap-1">
+                      <Pin className="w-3 h-3" />
+                      Boosted
+                    </span>
+                  ) : null}
                 </div>
-            </div>
-        );
-    }
-
-    return (
-        <div style={{ backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
-            <Navigation />
-            <div style={{ maxWidth: "800px", margin: "0 auto", padding: "20px" }}>
-                <h1 style={{ fontSize: "24px", fontWeight: "bold", color: "#111b21", marginBottom: "20px" }}>
-                    Private Gist
-                </h1>
-                {error && (
-                    <p style={{ color: "red", textAlign: "center", fontSize: "16px", marginBottom: "20px" }}>
-                        {error}
-                    </p>
-                )}
-                {conversations.length > 0 ? (
-                    conversations.map((conv) => (
-                        <div
-                            key={conv.id}
-                            onClick={() => navigate(`/chat/${conv.id}`, { state: { otherUsername: conv.other_username } })}
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                padding: "15px",
-                                backgroundColor: "white",
-                                borderRadius: "8px",
-                                marginBottom: "10px",
-                                cursor: "pointer",
-                                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                                transition: "background-color 0.2s",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f5f6f5")}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "white")}
-                        >
-                            <div
-                                style={{
-                                    width: "50px",
-                                    height: "50px",
-                                    borderRadius: "50%",
-                                    backgroundColor: "#e0e0e0",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "20px",
-                                    color: "#666",
-                                    marginRight: "15px",
-                                }}
-                            >
-                                {conv.other_username.charAt(0).toUpperCase()}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <h2 style={{ fontSize: "16px", fontWeight: "bold", color: "#111b21" }}>
-                                        {conv.other_username}
-                                    </h2>
-                                    {conv.is_boosted ? (
-                                        <span style={{ fontSize: "12px", color: "#00a884" }}>📌 Boosted</span>
-                                    ) : null}
-                                </div>
-                                <p style={{ fontSize: "14px", color: "#667781", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    {conv.latest_message}
-                                </p>
-                            </div>
-                            <small style={{ fontSize: "12px", color: "#667781" }}>
-                                {new Date(conv.latest_message_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </small>
-                        </div>
-                    ))
-                ) : (
-                    <p style={{ color: "#667781", textAlign: "center", fontSize: "16px" }}>
-                        No chats yet. Start a conversation!
-                    </p>
-                )}
-            </div>
+                <p className="text-sm text-tx-secondary truncate mt-0.5">{conv.latest_message}</p>
+              </div>
+              <span className="text-xs text-tx-muted flex-shrink-0">
+                {new Date(conv.latest_message_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </button>
+          ))}
         </div>
-    );
+      ) : (
+        <EmptyState
+          title="No conversations yet"
+          message="Start chatting with someone by visiting their profile and sending a DM."
+          icon={<MessageCircle className="w-8 h-8 text-tx-muted" />}
+        />
+      )}
+    </Layout>
+  );
 }

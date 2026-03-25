@@ -1,0 +1,35 @@
+# Teenverse Frontend Dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY frontend/package*.json ./frontend/
+
+# Install dependencies
+RUN cd frontend && npm ci
+
+# Copy frontend source
+COPY frontend/ ./frontend/
+
+# Build the frontend
+RUN cd frontend && npm run build
+
+# Production stage with nginx
+FROM nginx:alpine AS runner
+
+# Copy custom nginx config
+COPY --from=builder /app/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built assets
+COPY --from=builder /app/frontend/build /usr/share/nginx/html
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

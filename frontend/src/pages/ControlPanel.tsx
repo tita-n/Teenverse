@@ -1,97 +1,84 @@
 import { useState } from "react";
 import axios from "axios";
 import { useAuth } from "../hooks/useAuth";
-import Navigation from "../components/Navigation";
+import { withAuth } from "../lib/api";
+import Layout from "../components/ui/Layout";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+import { LoadingState, AuthRequiredState } from "../components/ui/PageStates";
+import { ShieldCheck } from "lucide-react";
+
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || "";
 
 export default function ControlPanel() {
-    const { user, token } = useAuth();
-    const [username, setUsername] = useState("");
-    const [message, setMessage] = useState("");
+  const { user, token, loading: authLoading } = useAuth();
+  const [username, setUsername] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-    const handleVerify = async (verify: boolean) => {
-        if (!user || !token) {
-            setMessage("Please log in to access the control panel.");
-            return;
-        }
-        if (user.email !== "restorationmichael3@gmail.com") {
-            setMessage("Unauthorized: Only the creator can access this page.");
-            return;
-        }
-        if (!username) {
-            setMessage("Please enter a username.");
-            return;
-        }
-        try {
-            const res = await axios.post(
-                "/api/users/verify",
-                { username, verify },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                }
-            );
-            setMessage(res.data.message);
-            setUsername("");
-        } catch (err) {
-            console.error("Error verifying user:", err);
-            setMessage("Error: " + (err.response?.data?.message || err.message));
-        }
-    };
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
-    if (!user || !token) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center text-red-500 text-xl">
-                    Please log in to access the control panel.
-                </div>
-            </div>
-        );
+  const handleVerify = async (verify: boolean) => {
+    if (!user || !token || !isAdmin || !username) return;
+    try {
+      setLoading(true);
+      const res = await axios.post("/api/users/verify", { username, verify }, withAuth(token));
+      setMessage(res.data.message);
+      setUsername("");
+    } catch (err: any) {
+      setMessage("Error: " + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
     }
+  };
 
-    if (user.email !== "restorationmichael3@gmail.com") {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-                <div className="text-center text-red-500 text-xl">
-                    Unauthorized: Only the creator can access this page.
-                </div>
-            </div>
-        );
-    }
-
+  if (authLoading) return <LoadingState message="Checking authentication..." />;
+  if (!user || !token) return <AuthRequiredState />;
+  if (!isAdmin) {
     return (
-        <div>
-            <Navigation />
-            <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-                <div className="max-w-2xl mx-auto">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-6">Control Panel</h1>
-                    <p className="text-center text-green-600 mb-6">{message}</p>
-                    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md">
-                        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 mb-4">
-                            Verify/Unverify User
-                        </h2>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            placeholder="Enter username"
-                            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
-                        />
-                        <div className="flex space-x-4">
-                            <button
-                                onClick={() => handleVerify(true)}
-                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-                            >
-                                Verify
-                            </button>
-                            <button
-                                onClick={() => handleVerify(false)}
-                                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
-                            >
-                                Unverify
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+      <Layout>
+        <div className="text-center py-12">
+          <ShieldCheck className="w-16 h-16 mx-auto text-red-300 mb-4" />
+          <h2 className="text-xl font-semibold text-tx-primary mb-2">Access Denied</h2>
+          <p className="text-tx-secondary">Only administrators can access this page.</p>
         </div>
+      </Layout>
     );
+  }
+
+  return (
+    <Layout maxWidth="2xl">
+      <div className="mb-6">
+        <h1 className="text-h1 flex items-center gap-2">
+          <ShieldCheck className="w-6 h-6 text-brand-500" />
+          Control Panel
+        </h1>
+        <p className="text-tx-secondary mt-1">Administrative tools</p>
+      </div>
+
+      {message && (
+        <div className={`mb-4 p-3 rounded-lg text-sm ${message.includes("Error") ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>
+          {message}
+        </div>
+      )}
+
+      <div className="card p-6">
+        <h2 className="text-h3 mb-4">Verify / Unverify User</h2>
+        <Input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Enter username"
+          className="mb-4"
+        />
+        <div className="flex gap-3">
+          <Button onClick={() => handleVerify(true)} loading={loading} disabled={!username.trim()}>
+            Verify
+          </Button>
+          <Button onClick={() => handleVerify(false)} variant="danger" loading={loading} disabled={!username.trim()}>
+            Unverify
+          </Button>
+        </div>
+      </div>
+    </Layout>
+  );
 }

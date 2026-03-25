@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teenverse-postgres
+  namespace: teenverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: teenverse-postgres
+  template:
+    metadata:
+      labels:
+        app: teenverse-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: teenverse
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: teenverse-secrets
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: teenverse-secrets
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "teenverse"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: teenverse-postgres-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: teenverse-postgres-pvc
+  namespace: teenverse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teenverse-postgres-service
+  namespace: teenverse
+spec:
+  selector:
+    app: teenverse-postgres
+  ports:
+    - port: 5432
+  clusterIP: None

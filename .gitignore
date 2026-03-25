@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+
+# Environment files - NEVER commit these!
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Backups
+*-backup-*.db
+*backup*.db
+*.bak
+
+# Cloudinary config (if stored locally)
+cloudinary.json
+
+# Uploads directory
+uploads/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Docker volumes (local development)
+postgres_data/
+redis_data/
+
+# Kubernetes (secrets should be managed separately)
+k8s/*.yaml
+!k8s/config.yaml
+!k8s/backend.yaml
+!k8s/database.yaml
+
+# SSL certificates (never commit!)
+nginx/ssl/
+*.pem
+*.key
+*.crt
+
+# Coverage
+coverage/
+
+# Misc
+*.tgz
+
