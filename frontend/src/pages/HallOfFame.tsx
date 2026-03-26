@@ -6,23 +6,24 @@ import Layout from "../components/ui/Layout";
 import { LoadingState, AuthRequiredState, EmptyState } from "../components/ui/PageStates";
 import { Trophy, Star, Users, DollarSign, Award } from "lucide-react";
 
-interface Winner { id: number; actual_username: string; rank: number; awarded_at: string; }
-interface Creator { id: number; username: string; wins: number; }
-interface Squad { id: number; username: string; game_name: string; wins: number; creator_username: string; }
-interface TopEarner { id: number; username: string; coins: number; }
-interface DevPick { id: number; actual_username: string; title: string; awarded_at: string; }
+interface TopUser {
+  id: number;
+  username: string;
+  xp: number;
+  coins: number;
+  wins: number;
+  verified: number;
+  profile_media_url: string | null;
+}
 
-interface HallData {
-  ultimateShowdownWinners: Winner[];
-  topCreatorsAllTime: { [key: string]: Creator[] };
-  topCreatorsMonthly: { [key: string]: Creator[] };
-  topSquads: Squad[];
-  topEarners: TopEarner[];
-  developerPicks: DevPick[];
+interface HallResponse {
+  topXP: TopUser[];
+  topCoins: TopUser[];
+  topWins: TopUser[];
 }
 
 export default function HallOfFame() {
-  const [data, setData] = useState<HallData | null>(null);
+  const [data, setData] = useState<HallResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const { user, token, loading: authLoading } = useAuth();
 
@@ -47,112 +48,75 @@ export default function HallOfFame() {
       </div>
 
       <div className="space-y-6">
-        {/* Showdown Champions */}
-        <Section icon={<Trophy className="w-5 h-5 text-yellow-500" />} title="Ultimate Showdown Champions">
-          {data.ultimateShowdownWinners.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {data.ultimateShowdownWinners.map((w) => (
-                <div key={w.id} className="p-3 bg-surface-muted rounded-lg">
-                  <p className="font-semibold text-brand-600">{w.actual_username} <span className="text-sm text-tx-muted">Rank {w.rank}</span></p>
-                  <p className="text-xs text-tx-muted">{new Date(w.awarded_at).toLocaleDateString()}</p>
+        {/* Top by XP */}
+        <section className="bg-surface-muted p-4 rounded-xl">
+          <div className="flex items-center gap-2 mb-4">
+            <Star className="w-5 h-5 text-yellow-500" />
+            <h2 className="text-xl font-bold">Top by XP</h2>
+          </div>
+          {data.topXP && data.topXP.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {data.topXP.slice(0, 10).map((u, idx) => (
+                <div key={u.id} className="p-3 bg-surface rounded-lg flex items-center gap-3">
+                  <span className="text-2xl font-bold text-brand-500">#{idx + 1}</span>
+                  <div>
+                    <p className="font-semibold text-brand-600">{u.username}</p>
+                    <p className="text-xs text-tx-muted">{u.xp} XP</p>
+                  </div>
                 </div>
               ))}
             </div>
-          ) : <p className="text-sm text-tx-muted">No champions yet.</p>}
-        </Section>
+          ) : (
+            <p className="text-tx-muted">No users yet</p>
+          )}
+        </section>
 
-        {/* Top Creators All-Time */}
-        <Section icon={<Star className="w-5 h-5 text-yellow-500" />} title="Top Creators (All-Time)">
-          {Object.entries(data.topCreatorsAllTime).map(([cat, creators]) => (
-            <div key={cat} className="mb-4 last:mb-0">
-              <h4 className="text-sm font-medium text-tx-secondary mb-2">{cat}</h4>
-              {creators.length > 0 ? (
-                <ul className="space-y-1">
-                  {creators.map((c, i) => (
-                    <li key={c.id} className="flex items-center gap-2 text-sm">
-                      <span className="w-5 text-tx-muted">{i + 1}.</span>
-                      <span className="font-medium text-tx-primary">{c.username}</span>
-                      <span className="text-tx-muted">{c.wins} wins</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="text-xs text-tx-muted">No winners yet.</p>}
-            </div>
-          ))}
-        </Section>
-
-        {/* Top Creators Monthly */}
-        <Section icon={<Star className="w-5 h-5 text-blue-500" />} title="Top Creators (Monthly)">
-          {Object.entries(data.topCreatorsMonthly).map(([cat, creators]) => (
-            <div key={cat} className="mb-4 last:mb-0">
-              <h4 className="text-sm font-medium text-tx-secondary mb-2">{cat}</h4>
-              {creators.length > 0 ? (
-                <ul className="space-y-1">
-                  {creators.map((c, i) => (
-                    <li key={c.id} className="flex items-center gap-2 text-sm">
-                      <span className="w-5 text-tx-muted">{i + 1}.</span>
-                      <span className="font-medium text-tx-primary">{c.username}</span>
-                      <span className="text-tx-muted">{c.wins} wins</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="text-xs text-tx-muted">No winners this month.</p>}
-            </div>
-          ))}
-        </Section>
-
-        {/* Top Squads */}
-        <Section icon={<Users className="w-5 h-5 text-brand-500" />} title="Top Squads">
-          {data.topSquads.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {data.topSquads.map((s) => (
-                <div key={s.id} className="p-3 bg-surface-muted rounded-lg">
-                  <p className="font-semibold text-tx-primary">{s.username} <span className="text-sm text-tx-muted">({s.game_name})</span></p>
-                  <p className="text-sm text-tx-secondary">{s.wins} wins — Led by {s.creator_username}</p>
+        {/* Top by Coins */}
+        <section className="bg-surface-muted p-4 rounded-xl">
+          <div className="flex items-center gap-2 mb-4">
+            <DollarSign className="w-5 h-5 text-green-500" />
+            <h2 className="text-xl font-bold">Top Earners</h2>
+          </div>
+          {data.topCoins && data.topCoins.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {data.topCoins.slice(0, 10).map((u, idx) => (
+                <div key={u.id} className="p-3 bg-surface rounded-lg flex items-center gap-3">
+                  <span className="text-2xl font-bold text-green-500">#{idx + 1}</span>
+                  <div>
+                    <p className="font-semibold text-brand-600">{u.username}</p>
+                    <p className="text-xs text-tx-muted">{u.coins} coins</p>
+                  </div>
                 </div>
               ))}
             </div>
-          ) : <p className="text-sm text-tx-muted">No top squads yet.</p>}
-        </Section>
+          ) : (
+            <p className="text-tx-muted">No users yet</p>
+          )}
+        </section>
 
-        {/* Top Earners */}
-        <Section icon={<DollarSign className="w-5 h-5 text-green-500" />} title="Top Earners">
-          {data.topEarners.length > 0 ? (
-            <ul className="space-y-1">
-              {data.topEarners.map((e, i) => (
-                <li key={e.id} className="flex items-center gap-2 text-sm">
-                  <span className="w-5 text-tx-muted">{i + 1}.</span>
-                  <span className="font-medium text-tx-primary">{e.username}</span>
-                  <span className="text-tx-muted">{e.coins} coins</span>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-sm text-tx-muted">No top earners yet.</p>}
-        </Section>
-
-        {/* Developer Picks */}
-        <Section icon={<Award className="w-5 h-5 text-blue-500" />} title="Developer Picks">
-          {data.developerPicks.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {data.developerPicks.map((p) => (
-                <div key={p.id} className="p-3 bg-surface-muted rounded-lg">
-                  <p className="font-semibold text-tx-primary">{p.actual_username} <span className="text-sm text-tx-muted">{p.title}</span></p>
-                  <p className="text-xs text-tx-muted">{new Date(p.awarded_at).toLocaleDateString()}</p>
+        {/* Top by Wins */}
+        <section className="bg-surface-muted p-4 rounded-xl">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="w-5 h-5 text-yellow-500" />
+            <h2 className="text-xl font-bold">Top Warriors</h2>
+          </div>
+          {data.topWins && data.topWins.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {data.topWins.slice(0, 10).map((u, idx) => (
+                <div key={u.id} className="p-3 bg-surface rounded-lg flex items-center gap-3">
+                  <span className="text-2xl font-bold text-orange-500">#{idx + 1}</span>
+                  <div>
+                    <p className="font-semibold text-brand-600">{u.username}</p>
+                    <p className="text-xs text-tx-muted">{u.wins} wins</p>
+                  </div>
                 </div>
               ))}
             </div>
-          ) : <p className="text-sm text-tx-muted">No picks yet.</p>}
-        </Section>
+          ) : (
+            <p className="text-tx-muted">No users yet</p>
+          )}
+        </section>
       </div>
     </Layout>
-  );
-}
-
-function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <div className="card p-6">
-      <h2 className="text-h3 flex items-center gap-2 mb-4">{icon} {title}</h2>
-      {children}
-    </div>
   );
 }

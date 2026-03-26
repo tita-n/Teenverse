@@ -4,6 +4,7 @@ import multer from "multer";
 import cloudinary from "cloudinary";
 
 function calculateLevel(xp: number): { level: number; rank: string } {
+    if (!xp || typeof xp !== 'number') xp = 0;
     let level = Math.floor(xp / 10) + 1;
     if (level > 100) level = 100;
 
