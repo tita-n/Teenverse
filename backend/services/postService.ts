@@ -1,4 +1,3 @@
-import { db } from "../database";
 import {
     getUserByEmail,
     getPostById,
@@ -18,19 +17,19 @@ import {
     addLike,
     getTotalUserLikes,
     setNewsKingBadge,
-    getUserById,
 } from "../db";
+import { query } from "../database";
 import { AppError } from "../middleware/errorHandler";
 
 export async function fetchPosts(limit: number, offset: number, excludeRants: boolean = false) {
-    return getPosts(db, limit, offset, excludeRants);
+    return getPosts(limit, offset, excludeRants);
 }
 
 export async function createNewPost(email: string, content: string, mode: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    await createPost(db, {
+    await createPost({
         userId: user.id,
         username: user.username,
         content,
@@ -41,58 +40,57 @@ export async function createNewPost(email: string, content: string, mode: string
 }
 
 export async function editPost(email: string, postId: number, content: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
     if (post.user_id !== user.id) {
         throw new AppError("You can only edit your own posts", 403, "FORBIDDEN");
     }
 
-    await updatePost(db, postId, content);
+    await updatePost(postId, content);
     return { message: "Post updated successfully" };
 }
 
 export async function deletePostByEmail(email: string, postId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
     if (post.user_id !== user.id) {
         throw new AppError("You can only delete your own posts", 403, "FORBIDDEN");
     }
 
-    await deletePost(db, postId);
+    await deletePost(postId);
     return { message: "Post deleted successfully" };
 }
 
 export async function likePost(email: string, postId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const alreadyLiked = await hasUserLikedPost(db, postId, user.id);
+    const alreadyLiked = await hasUserLikedPost(postId, user.id);
     if (alreadyLiked) {
         throw new AppError("Already liked this post", 400, "ALREADY_LIKED");
     }
 
-    await addLike(db, postId, user.id);
+    await addLike(postId, user.id);
 
-    // Check for news_king badge
-    const totalLikes = await getTotalUserLikes(db, user.id);
+    const totalLikes = await getTotalUserLikes(user.id);
     if (totalLikes >= 100) {
-        await setNewsKingBadge(db, user.id);
+        await setNewsKingBadge(user.id);
     }
 
     return { message: "Post liked" };
 }
 
 export async function reactToPost(email: string, postId: number, reaction: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
 
     let reactions: Record<string, string[]> = {};
@@ -107,25 +105,22 @@ export async function reactToPost(email: string, postId: number, reaction: strin
         reactions[reaction].push(user.username);
     }
 
-    await db.run(
-        "UPDATE posts SET reactions = ? WHERE id = ?",
-        [JSON.stringify(reactions), postId],
-        (err) => {
-            if (err) throw err;
-        }
+    await query(
+        "UPDATE posts SET reactions = $1 WHERE id = $2",
+        [JSON.stringify(reactions), postId]
     );
 
     return { message: "Reaction added successfully" };
 }
 
 export async function sharePostToSquad(email: string, postId: number, squadId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
 
-    await sharePost(db, {
+    await sharePost({
         postId,
         userId: user.id,
         squadId,
@@ -139,47 +134,47 @@ export async function sharePostToSquad(email: string, postId: number, squadId: n
 }
 
 export async function getPostComments(postId: number) {
-    return getCommentsForPost(db, postId);
+    return getCommentsForPost(postId);
 }
 
 export async function addCommentToPost(email: string, postId: number, content: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
 
-    await createComment(db, { postId, userId: user.id, content });
+    await createComment({ postId, userId: user.id, content });
     return { message: "Comment added successfully" };
 }
 
 export async function addReplyToComment(email: string, commentId: number, content: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    await addReply(db, { commentId, userId: user.id, content });
+    await addReply({ commentId, userId: user.id, content });
     return { message: "Reply added successfully" };
 }
 
 export async function likeComment(email: string, commentId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    await incrementCommentLikes(db, commentId);
+    await incrementCommentLikes(commentId);
     return { message: "Comment liked successfully" };
 }
 
 export async function pinPostComment(email: string, postId: number, commentId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const post = await getPostById(db, postId);
+    const post = await getPostById(postId);
     if (!post) throw new AppError("Post not found", 404, "POST_NOT_FOUND");
     if (post.user_id !== user.id) {
         throw new AppError("You can only pin comments on your own posts", 403, "FORBIDDEN");
     }
 
-    await unpinAllComments(db, postId);
-    await pinComment(db, commentId);
+    await unpinAllComments(postId);
+    await pinComment(commentId);
     return { message: "Comment pinned successfully" };
 }

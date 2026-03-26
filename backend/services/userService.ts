@@ -1,5 +1,4 @@
 import bcrypt from "bcryptjs";
-import { db } from "../database";
 import {
     getUserByEmail,
     getUserByUsername,
@@ -8,8 +7,6 @@ import {
     getPublicUserProfile,
     addXp,
     addCoins,
-    subtractCoins,
-    getCoins,
     getUserById,
 } from "../db";
 import { AppError } from "../middleware/errorHandler";
@@ -17,19 +14,18 @@ import { generateToken } from "../middleware/auth";
 import { JwtPayload } from "../types";
 
 export async function registerUser(data: { email: string; username: string; password: string; dob: string }) {
-    // Check existing user
-    const existingEmail = await getUserByEmail(db, data.email);
+    const existingEmail = await getUserByEmail(data.email);
     if (existingEmail) {
         throw new AppError("Email already exists", 400, "EMAIL_EXISTS");
     }
 
-    const existingUsername = await getUserByUsername(db, data.username);
+    const existingUsername = await getUserByUsername(data.username);
     if (existingUsername) {
         throw new AppError("Username already taken", 400, "USERNAME_TAKEN");
     }
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
-    await createUser(db, {
+    await createUser({
         email: data.email,
         username: data.username,
         password: hashedPassword,
@@ -40,7 +36,7 @@ export async function registerUser(data: { email: string; username: string; pass
 }
 
 export async function loginUser(email: string, password: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
         throw new AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
@@ -64,15 +60,19 @@ export async function loginUser(email: string, password: string) {
 }
 
 export async function getCurrentUser(email: string) {
-    const user = await getPublicUserProfile(db, (await getUserByEmail(db, email))?.username || email);
+    const user = await getUserByEmail(email);
     if (!user) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
-    return user;
+    const publicProfile = await getPublicUserProfile(user.username);
+    if (!publicProfile) {
+        throw new AppError("User not found", 404, "USER_NOT_FOUND");
+    }
+    return publicProfile;
 }
 
 export async function getUserStats(email: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
@@ -82,7 +82,7 @@ export async function getUserStats(email: string) {
 }
 
 export async function getSnitchStatus(email: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
@@ -90,7 +90,7 @@ export async function getSnitchStatus(email: string) {
 }
 
 export async function claimDailyLogin(email: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
@@ -99,7 +99,7 @@ export async function claimDailyLogin(email: string) {
 
     if (user.last_login !== today) {
         const newXP = user.xp + 10;
-        await updateUserByEmail(db, email, { xp: newXP, last_login: today });
+        await updateUserByEmail(email, { xp: newXP, last_login: today });
         return { message: "+10 XP for daily login!", newXP };
     }
 
@@ -117,8 +117,8 @@ export async function awardPostRewards(user: any): Promise<{ xpBonus: number; co
     const newXP = user.xp + xpBonus;
     const newCoins = user.coins + coinBonus;
 
-    await addXp(db, user.id, xpBonus);
-    await addCoins(db, user.id, coinBonus);
+    await addXp(user.id, xpBonus);
+    await addCoins(user.id, coinBonus);
 
     return { xpBonus, coinBonus, newXP, newCoins };
 }
@@ -138,11 +138,11 @@ export function calculateLevel(xp: number): { level: number; rank: string } {
 }
 
 export async function verifyUser(username: string, verify: boolean) {
-    const user = await getUserByUsername(db, username);
+    const user = await getUserByUsername(username);
     if (!user) {
         throw new AppError("User not found", 404, "USER_NOT_FOUND");
     }
 
-    await updateUserByEmail(db, user.email, { verified: verify ? 1 : 0 });
+    await updateUserByEmail(user.email, { verified: verify ? 1 : 0 });
     return { message: `User ${username} ${verify ? "verified" : "unverified"} successfully` };
 }

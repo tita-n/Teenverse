@@ -1,4 +1,4 @@
-import { db } from "../database";
+import { query } from "../database";
 import {
     getUserByEmail,
     getHypeBattles,
@@ -24,7 +24,7 @@ import {
 import { AppError } from "../middleware/errorHandler";
 
 export async function fetchBattles(filters: { category?: string; isLive?: boolean }) {
-    return getHypeBattles(db, filters);
+    return getHypeBattles(filters);
 }
 
 export async function createNewBattle(data: {
@@ -37,12 +37,12 @@ export async function createNewBattle(data: {
     isLive: boolean;
     mediaUrl: string | null;
 }) {
-    const user = await getUserByEmail(db, data.email);
+    const user = await getUserByEmail(data.email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
     const votingDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    const battle = await createBattle(db, {
+    const battle = await createBattle({
         userId: user.id,
         username: user.username,
         opponentId: data.opponentId,
@@ -64,44 +64,44 @@ export async function respondBattle(data: {
     content: string;
     mediaUrl: string | null;
 }) {
-    const user = await getUserByEmail(db, data.email);
+    const user = await getUserByEmail(data.email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const battle = await getBattleById(db, data.battleId);
+    const battle = await getBattleById(data.battleId);
     if (!battle) throw new AppError("Battle not found", 404, "BATTLE_NOT_FOUND");
     if (battle.closed) throw new AppError("Battle is closed", 400, "BATTLE_CLOSED");
     if (battle.opponent_id !== user.id) {
         throw new AppError("You are not the opponent for this battle", 403, "NOT_OPPONENT");
     }
 
-    await respondToBattle(db, data.battleId, data.content, data.mediaUrl);
+    await respondToBattle(data.battleId, data.content, data.mediaUrl);
     return { message: "Response submitted!" };
 }
 
 export async function voteOnBattle(email: string, battleId: number, voteFor: "creator" | "opponent") {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const battle = await getBattleById(db, battleId);
+    const battle = await getBattleById(battleId);
     if (!battle) throw new AppError("Battle not found", 404, "BATTLE_NOT_FOUND");
     if (battle.closed) throw new AppError("Battle is closed", 400, "BATTLE_CLOSED");
     if (new Date(battle.voting_deadline) < new Date()) {
         throw new AppError("Voting has ended", 400, "VOTING_ENDED");
     }
 
-    const alreadyVoted = await hasVotedForBattle(db, user.id, battleId);
+    const alreadyVoted = await hasVotedForBattle(user.id, battleId);
     if (alreadyVoted) {
         throw new AppError("You already voted for this battle!", 400, "ALREADY_VOTED");
     }
 
-    await castBattleVote(db, user.id, battleId, voteFor);
-    await incrementBattleVotes(db, battleId, voteFor === "creator" ? "votes" : "opponent_votes");
+    await castBattleVote(user.id, battleId, voteFor);
+    await incrementBattleVotes(battleId, voteFor === "creator" ? "votes" : "opponent_votes");
 
     return { message: "Vote cast successfully!" };
 }
 
 export async function determineWinners() {
-    const battles = await getExpiredBattles(db);
+    const battles = await getExpiredBattles();
     const results: { battleId: number; winnerId: number | null }[] = [];
 
     for (const battle of battles) {
@@ -116,29 +116,28 @@ export async function determineWinners() {
             loserId = battle.user_id;
         }
 
-        await closeBattle(db, battle.id, winnerId || battle.team_id || null);
+        await closeBattle(battle.id, winnerId);
 
         if (winnerId) {
-            await addCoins(db, winnerId, 50);
-            const winner = await getUserById(db, winnerId);
+            await addCoins(winnerId, 50);
+            const winner = await getUserById(winnerId);
             if (winner) {
-                await updateUser(db, winnerId, {
+                await updateUser(winnerId, {
                     wins: (winner.wins || 0) + 1,
                     tier: calculateTier(winner.wins + 1, winner.losses, winner.tier),
                 });
             }
 
             if (loserId) {
-                const loser = await getUserById(db, loserId);
+                const loser = await getUserById(loserId);
                 if (loser) {
-                    await updateUser(db, loserId, {
+                    await updateUser(loserId, {
                         losses: (loser.losses || 0) + 1,
                         tier: calculateTier(loser.wins, loser.losses + 1, loser.tier),
                     });
                 }
             }
 
-            // Award title
             const titleMap: Record<string, string> = {
                 "Rap Battle": "Rap King",
                 "Dance-off": "Dance Legend",
@@ -148,8 +147,8 @@ export async function determineWinners() {
             };
             const title = titleMap[battle.category];
             if (title) {
-                await db.run(`UPDATE users SET title = NULL WHERE title = ?`, [title]);
-                await db.run(`UPDATE users SET title = ? WHERE id = ?`, [title, winnerId]);
+                await query(`UPDATE users SET title = NULL WHERE title = $1`, [title]);
+                await query(`UPDATE users SET title = $1 WHERE id = $2`, [title, winnerId]);
             }
         }
 
@@ -174,41 +173,33 @@ function calculateTier(wins: number, losses: number, currentTier: number): numbe
     return newTier;
 }
 
-// ============ Team Services ============
-
 export async function fetchTeams() {
-    return getTeams(db);
+    return getTeams();
 }
 
 export async function createNewTeam(email: string, name: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const team = await createTeam(db, name, user.id);
+    const team = await createTeam(name, user.id);
     return { message: "Team created!", teamId: team.id };
 }
 
 export async function joinTeamByEmail(email: string, teamId: number) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const alreadyMember = await isTeamMember(db, teamId, user.id);
+    const alreadyMember = await isTeamMember(teamId, user.id);
     if (alreadyMember) throw new AppError("Already a member of this team", 400, "ALREADY_MEMBER");
 
-    await addTeamMember(db, teamId, user.id);
+    await addTeamMember(teamId, user.id);
     return { message: "Joined team successfully!" };
 }
 
-// ============ Squad Services ============
-
-export async function fetchGameSquads() {
-    return getHypeBattles(db, {}); // This will need the squad equivalents from db.ts
-}
-
 export async function getBattleUserStats(email: string) {
-    const user = await getUserByEmail(db, email);
+    const user = await getUserByEmail(email);
     if (!user) throw new AppError("User not found", 404, "USER_NOT_FOUND");
 
-    const wins = await getBattleWins(db, user.id);
+    const wins = await getBattleWins(user.id);
     return { wins };
 }
