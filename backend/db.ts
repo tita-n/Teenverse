@@ -1,161 +1,121 @@
-import { Database } from "sqlite3";
-import path from "path";
+import { query, queryOne, execute } from "./database";
 
-// Generic query helpers
-export function dbGet<T = any>(db: Database, sql: string, params: any[] = []): Promise<T | null> {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) reject(err);
-            else resolve(row as T | null);
-        });
-    });
+export async function getUserById(id: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM users WHERE id = $1", [id]);
 }
 
-export function dbAll<T = any>(db: Database, sql: string, params: any[] = []): Promise<T[]> {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows as T[]);
-        });
-    });
+export async function getUserByEmail(email: string): Promise<any | undefined> {
+    return queryOne("SELECT * FROM users WHERE email = $1", [email]);
 }
 
-export function dbRun(db: Database, sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) reject(err);
-            else resolve({ lastID: this.lastID, changes: this.changes });
-        });
-    });
+export async function getUserByUsername(username: string): Promise<any | undefined> {
+    return queryOne("SELECT * FROM users WHERE username = $1", [username]);
 }
 
-// ============ User Queries ============
-
-export async function getUserById(db: Database, id: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM users WHERE id = ?", [id]);
-}
-
-export async function getUserByEmail(db: Database, email: string): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM users WHERE email = ?", [email]);
-}
-
-export async function getUserByUsername(db: Database, username: string): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM users WHERE username = ?", [username]);
-}
-
-export async function createUser(db: Database, data: { email: string; username: string; password: string; dob: string; role?: string }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO users (email, username, password, dob, verified, role) VALUES (?, ?, ?, ?, ?, ?)",
-        [data.email, data.username, data.password, data.dob, 0, data.role || "user"]
+export async function createUser(data: { email: string; username: string; password: string; dob: string; role?: string }): Promise<void> {
+    await execute(
+        "INSERT INTO users (email, username, password, dob, verified, is_admin) VALUES ($1, $2, $3, $4, $5, $6)",
+        [data.email, data.username, data.password, data.dob, 0, data.role === "admin" ? 1 : 0]
     );
 }
 
-export async function updateUser(db: Database, id: number, updates: Record<string, any>): Promise<void> {
-    const fields = Object.keys(updates).map((key) => `${key} = ?`).join(", ");
-    const values = [...Object.values(updates), id];
-    await dbRun(db, `UPDATE users SET ${fields} WHERE id = ?`, values);
+export async function updateUser(id: number, updates: Record<string, any>): Promise<void> {
+    const keys = Object.keys(updates);
+    const values = Object.values(updates);
+    const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(", ");
+    await execute(`UPDATE users SET ${setClause} WHERE id = $${keys.length + 1}`, [...values, id]);
 }
 
-export async function updateUserByEmail(db: Database, email: string, updates: Record<string, any>): Promise<void> {
-    const fields = Object.keys(updates).map((key) => `${key} = ?`).join(", ");
-    const values = [...Object.values(updates), email];
-    await dbRun(db, `UPDATE users SET ${fields} WHERE email = ?`, values);
+export async function updateUserByEmail(email: string, updates: Record<string, any>): Promise<void> {
+    const keys = Object.keys(updates);
+    const values = Object.values(updates);
+    const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(", ");
+    await execute(`UPDATE users SET ${setClause} WHERE email = $${keys.length + 1}`, [...values, email]);
 }
 
-export async function getPublicUserProfile(db: Database, username: string): Promise<any | null> {
-    return dbGet(
-        db,
-        "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
+export async function getPublicUserProfile(username: string): Promise<any | undefined> {
+    return queryOne(
+        "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = $1",
         [username]
     );
 }
 
-export async function getUserCount(db: Database): Promise<number> {
-    const row = await dbGet<{ count: number }>(db, "SELECT COUNT(*) as count FROM users");
+export async function getUserCount(): Promise<number> {
+    const row = await queryOne<{ count: number }>("SELECT COUNT(*) as count FROM users");
     return row?.count || 0;
 }
 
-export async function addXp(db: Database, userId: number, xp: number): Promise<void> {
-    await dbRun(db, "UPDATE users SET xp = xp + ? WHERE id = ?", [xp, userId]);
+export async function addXp(userId: number, xp: number): Promise<void> {
+    await execute("UPDATE users SET xp = xp + $1 WHERE id = $2", [xp, userId]);
 }
 
-export async function addCoins(db: Database, userId: number, coins: number): Promise<void> {
-    await dbRun(db, "UPDATE users SET coins = coins + ? WHERE id = ?", [coins, userId]);
+export async function addCoins(userId: number, coins: number): Promise<void> {
+    await execute("UPDATE users SET coins = coins + $1 WHERE id = $2", [coins, userId]);
 }
 
-export async function subtractCoins(db: Database, userId: number, coins: number): Promise<void> {
-    await dbRun(db, "UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?", [coins, userId, coins]);
+export async function subtractCoins(userId: number, coins: number): Promise<void> {
+    await execute("UPDATE users SET coins = coins - $1 WHERE id = $2 AND coins >= $1", [coins, userId]);
 }
 
-export async function getCoins(db: Database, userId: number): Promise<number> {
-    const row = await dbGet<{ coins: number }>(db, "SELECT coins FROM users WHERE id = ?", [userId]);
+export async function getCoins(userId: number): Promise<number> {
+    const row = await queryOne<{ coins: number }>("SELECT coins FROM users WHERE id = $1", [userId]);
     return row?.coins || 0;
 }
 
-// ============ Post Queries ============
-
-export async function getPostById(db: Database, postId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM posts WHERE id = ?", [postId]);
+export async function getPostById(postId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM posts WHERE id = $1", [postId]);
 }
 
-export async function getPosts(db: Database, limit: number = 10, offset: number = 0, excludeRants: boolean = false): Promise<any[]> {
+export async function getPosts(limit: number = 10, offset: number = 0, excludeRants: boolean = false): Promise<any[]> {
     if (excludeRants) {
-        return dbAll(
-            db,
-            "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode != 'rant' ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+        return query(
+            "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id WHERE p.mode != 'rant' ORDER BY p.created_at DESC LIMIT $1 OFFSET $2",
             [limit, offset]
         );
     }
-    return dbAll(
-        db,
-        "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
+    return query(
+        "SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type FROM posts p JOIN users u ON p.user_id = u.id ORDER BY p.created_at DESC LIMIT $1 OFFSET $2",
         [limit, offset]
     );
 }
 
-export async function getUserPosts(db: Database, userId: number): Promise<any[]> {
-    return dbAll(db, "SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC", [userId]);
+export async function getUserPosts(userId: number): Promise<any[]> {
+    return query("SELECT * FROM posts WHERE user_id = $1 ORDER BY created_at DESC", [userId]);
 }
 
-export async function createPost(db: Database, data: { userId: number; username: string; content: string; mode: string; mediaUrl?: string | null; mediaType?: string | null; squadId?: number | null }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO posts (user_id, username, content, mode, created_at, media_url, media_type, squad_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [data.userId, data.username, data.content, data.mode, new Date().toISOString(), data.mediaUrl || null, data.mediaType || null, data.squadId || null]
+export async function createPost(data: { userId: number; username: string; content: string; mode: string; mediaUrl?: string | null; mediaType?: string | null; squadId?: number | null }): Promise<void> {
+    await execute(
+        "INSERT INTO posts (user_id, content, mode, created_at, media_url, media_type) VALUES ($1, $2, $3, $4, $5, $6)",
+        [data.userId, data.content, data.mode, new Date().toISOString(), data.mediaUrl || null, data.mediaType || null]
     );
 }
 
-export async function updatePost(db: Database, postId: number, content: string): Promise<void> {
-    await dbRun(db, "UPDATE posts SET content = ? WHERE id = ?", [content, postId]);
+export async function updatePost(postId: number, content: string): Promise<void> {
+    await execute("UPDATE posts SET content = $1 WHERE id = $2", [content, postId]);
 }
 
-export async function deletePost(db: Database, postId: number): Promise<void> {
-    await dbRun(db, "DELETE FROM posts WHERE id = ?", [postId]);
+export async function deletePost(postId: number): Promise<void> {
+    await execute("DELETE FROM posts WHERE id = $1", [postId]);
 }
 
-export async function incrementPostLikes(db: Database, postId: number): Promise<void> {
-    await dbRun(db, "UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId]);
+export async function incrementPostLikes(postId: number): Promise<void> {
+    await execute("UPDATE posts SET likes = likes + 1 WHERE id = $1", [postId]);
 }
 
-export async function getPostCount(db: Database): Promise<number> {
-    const row = await dbGet<{ count: number }>(db, "SELECT COUNT(*) as count FROM posts");
+export async function getPostCount(): Promise<number> {
+    const row = await queryOne<{ count: number }>("SELECT COUNT(*) as count FROM posts");
     return row?.count || 0;
 }
 
-// ============ Comment Queries ============
-
-export async function getCommentsForPost(db: Database, postId: number): Promise<any[]> {
-    const comments = await dbAll(
-        db,
-        "SELECT c.*, u.username, u.profile_media_url, u.profile_media_type FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = ? ORDER BY c.created_at ASC",
+export async function getCommentsForPost(postId: number): Promise<any[]> {
+    const comments = await query(
+        "SELECT c.*, u.username, u.profile_media_url, u.profile_media_type FROM comments c JOIN users u ON c.user_id = u.id WHERE c.post_id = $1 ORDER BY c.created_at ASC",
         [postId]
     );
 
     for (const comment of comments) {
-        comment.replies = await dbAll(
-            db,
-            "SELECT r.*, u.username, u.profile_media_url, u.profile_media_type FROM replies r JOIN users u ON r.user_id = u.id WHERE r.comment_id = ? ORDER BY r.created_at ASC",
+        comment.replies = await query(
+            "SELECT r.*, u.username, u.profile_media_url, u.profile_media_type FROM replies r JOIN users u ON r.user_id = u.id WHERE r.comment_id = $1 ORDER BY r.created_at ASC",
             [comment.id]
         );
     }
@@ -163,78 +123,70 @@ export async function getCommentsForPost(db: Database, postId: number): Promise<
     return comments;
 }
 
-export async function createComment(db: Database, data: { postId: number; userId: number; content: string }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO comments (post_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
+export async function createComment(data: { postId: number; userId: number; content: string }): Promise<void> {
+    await execute(
+        "INSERT INTO comments (post_id, user_id, content, created_at) VALUES ($1, $2, $3, $4)",
         [data.postId, data.userId, data.content, new Date().toISOString()]
     );
 }
 
-export async function addReply(db: Database, data: { commentId: number; userId: number; content: string }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO replies (comment_id, user_id, content, created_at) VALUES (?, ?, ?, ?)",
+export async function addReply(data: { commentId: number; userId: number; content: string }): Promise<void> {
+    await execute(
+        "INSERT INTO replies (comment_id, user_id, content, created_at) VALUES ($1, $2, $3, $4)",
         [data.commentId, data.userId, data.content, new Date().toISOString()]
     );
 }
 
-export async function incrementCommentLikes(db: Database, commentId: number): Promise<void> {
-    await dbRun(db, "UPDATE comments SET likes = likes + 1 WHERE id = ?", [commentId]);
+export async function incrementCommentLikes(commentId: number): Promise<void> {
+    await execute("UPDATE comments SET likes = likes + 1 WHERE id = $1", [commentId]);
 }
 
-export async function unpinAllComments(db: Database, postId: number): Promise<void> {
-    await dbRun(db, "UPDATE comments SET pinned = 0 WHERE post_id = ?", [postId]);
+export async function unpinAllComments(postId: number): Promise<void> {
+    await execute("UPDATE comments SET pinned = 0 WHERE post_id = $1", [postId]);
 }
 
-export async function pinComment(db: Database, commentId: number): Promise<void> {
-    await dbRun(db, "UPDATE comments SET pinned = 1 WHERE id = ?", [commentId]);
+export async function pinComment(commentId: number): Promise<void> {
+    await execute("UPDATE comments SET pinned = 1 WHERE id = $1", [commentId]);
 }
 
-export async function sharePost(db: Database, data: { postId: number; userId: number; squadId: number; content: string; mode: string; mediaUrl?: string | null; mediaType?: string | null }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO posts (user_id, content, mode, created_at, squad_id, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+export async function sharePost(data: { postId: number; userId: number; squadId: number; content: string; mode: string; mediaUrl?: string | null; mediaType?: string | null }): Promise<void> {
+    await execute(
+        "INSERT INTO posts (user_id, content, mode, created_at, squad_id, media_url, media_type) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         [data.userId, data.content, data.mode, new Date().toISOString(), data.squadId, data.mediaUrl || null, data.mediaType || null]
     );
 }
 
-// ============ Like Queries ============
-
-export async function hasUserLikedPost(db: Database, postId: number, userId: number): Promise<boolean> {
-    const like = await dbGet(db, "SELECT id FROM likes WHERE post_id = ? AND user_id = ?", [postId, userId]);
+export async function hasUserLikedPost(postId: number, userId: number): Promise<boolean> {
+    const like = await queryOne("SELECT id FROM likes WHERE post_id = $1 AND user_id = $2", [postId, userId]);
     return !!like;
 }
 
-export async function addLike(db: Database, postId: number, userId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO likes (post_id, user_id) VALUES (?, ?)", [postId, userId]);
-    await incrementPostLikes(db, postId);
+export async function addLike(postId: number, userId: number): Promise<void> {
+    await execute("INSERT INTO likes (post_id, user_id) VALUES ($1, $2)", [postId, userId]);
+    await incrementPostLikes(postId);
 }
 
-export async function getTotalUserLikes(db: Database, userId: number): Promise<number> {
-    const row = await dbGet<{ total: number }>(db, "SELECT SUM(likes) as total FROM posts WHERE user_id = ?", [userId]);
+export async function getTotalUserLikes(userId: number): Promise<number> {
+    const row = await queryOne<{ total: number }>("SELECT SUM(likes) as total FROM posts WHERE user_id = $1", [userId]);
     return row?.total || 0;
 }
 
-// ============ Rant Queries ============
-
-export async function getRants(db: Database, category?: string): Promise<any[]> {
-    let query = "SELECT * FROM rants";
+export async function getRants(category?: string): Promise<any[]> {
+    let queryText = "SELECT * FROM rants";
     const params: any[] = [];
 
     if (category) {
-        query += " WHERE category = ?";
+        queryText += " WHERE category = $1";
         params.push(category);
     }
 
-    query += " ORDER BY created_at DESC";
+    queryText += " ORDER BY created_at DESC";
 
-    const rants = await dbAll(db, query, params);
+    const rants = await query(queryText, params);
 
     for (const rant of rants) {
-        rant.comments = await dbAll(
-            db,
-            "SELECT * FROM rant_comments WHERE rant_id = ? ORDER BY created_at ASC",
+        rant.comments = await query(
+            "SELECT * FROM rant_comments WHERE rant_id = $1 ORDER BY created_at ASC",
             [rant.id]
         );
     }
@@ -242,19 +194,18 @@ export async function getRants(db: Database, category?: string): Promise<any[]> 
     return rants;
 }
 
-export async function createRant(db: Database, data: { content: string; category: string; askForAdvice: boolean }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO rants (content, category, ask_for_advice) VALUES (?, ?, ?)",
+export async function createRant(data: { content: string; category: string; askForAdvice: boolean }): Promise<void> {
+    await execute(
+        "INSERT INTO rants (content, category, ask_for_advice) VALUES ($1, $2, $3)",
         [data.content, data.category, data.askForAdvice ? 1 : 0]
     );
 }
 
-export async function incrementRantUpvotes(db: Database, rantId: number): Promise<void> {
-    await dbRun(db, "UPDATE rants SET upvotes = upvotes + 1 WHERE id = ?", [rantId]);
+export async function incrementRantUpvotes(rantId: number): Promise<void> {
+    await execute("UPDATE rants SET upvotes = upvotes + 1 WHERE id = $1", [rantId]);
 }
 
-export async function addRantReaction(db: Database, rantId: number, reaction: string, currentReactions: string): Promise<void> {
+export async function addRantReaction(rantId: number, reaction: string, currentReactions: string): Promise<void> {
     let reactions: Record<string, number> = {};
     try {
         reactions = JSON.parse(currentReactions || "{}");
@@ -262,167 +213,152 @@ export async function addRantReaction(db: Database, rantId: number, reaction: st
         reactions = {};
     }
     reactions[reaction] = (reactions[reaction] || 0) + 1;
-    await dbRun(db, "UPDATE rants SET reactions = ? WHERE id = ?", [JSON.stringify(reactions), rantId]);
+    await execute("UPDATE rants SET reactions = $1 WHERE id = $2", [JSON.stringify(reactions), rantId]);
 }
 
-export async function incrementRantHugs(db: Database, rantId: number): Promise<void> {
-    await dbRun(db, "UPDATE rants SET hugs = hugs + 1 WHERE id = ?", [rantId]);
+export async function incrementRantHugs(rantId: number): Promise<void> {
+    await execute("UPDATE rants SET hugs = hugs + 1 WHERE id = $1", [rantId]);
 }
 
-export async function createRantComment(db: Database, data: { rantId: number; content: string }): Promise<void> {
-    await dbRun(db, "INSERT INTO rant_comments (rant_id, content) VALUES (?, ?)", [data.rantId, data.content]);
+export async function createRantComment(data: { rantId: number; content: string }): Promise<void> {
+    await execute("INSERT INTO rant_comments (rant_id, content) VALUES ($1, $2)", [data.rantId, data.content]);
 }
 
-// ============ Game Squad Queries ============
-
-export async function getGameSquads(db: Database): Promise<any[]> {
-    return dbAll(
-        db,
+export async function getGameSquads(): Promise<any[]> {
+    return query(
         "SELECT g.*, u.username as actual_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.is_featured DESC, g.created_at DESC"
     );
 }
 
-export async function getSquadById(db: Database, squadId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM game_squads WHERE id = ?", [squadId]);
+export async function getSquadById(squadId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM game_squads WHERE id = $1", [squadId]);
 }
 
-export async function createGameSquad(db: Database, data: { userId: number; username: string; gameName: string; uid: string; description: string }): Promise<{ id: number }> {
-    const result = await dbRun(
-        db,
-        "INSERT INTO game_squads (user_id, username, game_name, uid, description, status, max_members, wins, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [data.userId, data.username, data.gameName, data.uid, data.description, "open", 5, 0, new Date()]
+export async function createGameSquad(data: { userId: number; username: string; gameName: string; uid: string; description: string }): Promise<{ id: number }> {
+    const result = await execute(
+        "INSERT INTO game_squads (user_id, game_name, uid, description, status, max_members, wins, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [data.userId, data.gameName, data.uid, data.description, "open", 5, 0, new Date()]
     );
-    await dbRun(
-        db,
-        "INSERT INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)",
+    await execute(
+        "INSERT INTO squad_members (squad_id, user_id, joined_at) VALUES ($1, $2, $3)",
         [result.lastID, data.userId, new Date()]
     );
     return { id: result.lastID };
 }
 
-export async function getSquadMemberCount(db: Database, squadId: number): Promise<number> {
-    const row = await dbGet<{ count: number }>(db, "SELECT COUNT(*) as count FROM squad_members WHERE squad_id = ?", [squadId]);
+export async function getSquadMemberCount(squadId: number): Promise<number> {
+    const row = await queryOne<{ count: number }>("SELECT COUNT(*) as count FROM squad_members WHERE squad_id = $1", [squadId]);
     return row?.count || 0;
 }
 
-export async function isSquadMember(db: Database, squadId: number, userId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT squad_id FROM squad_members WHERE squad_id = ? AND user_id = ?", [squadId, userId]);
+export async function isSquadMember(squadId: number, userId: number): Promise<boolean> {
+    const row = await queryOne("SELECT squad_id FROM squad_members WHERE squad_id = $1 AND user_id = $2", [squadId, userId]);
     return !!row;
 }
 
-export async function addSquadMember(db: Database, squadId: number, userId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)", [squadId, userId, new Date()]);
+export async function addSquadMember(squadId: number, userId: number): Promise<void> {
+    await execute("INSERT INTO squad_members (squad_id, user_id, joined_at) VALUES ($1, $2, $3)", [squadId, userId, new Date()]);
 }
 
-export async function updateSquadStatus(db: Database, squadId: number, status: "open" | "closed"): Promise<void> {
-    await dbRun(db, "UPDATE game_squads SET status = ? WHERE id = ?", [status, squadId]);
+export async function updateSquadStatus(squadId: number, status: "open" | "closed"): Promise<void> {
+    await execute("UPDATE game_squads SET status = $1 WHERE id = $2", [status, squadId]);
 }
 
-export async function featureSquad(db: Database, squadId: number, featured: boolean): Promise<void> {
-    await dbRun(db, "UPDATE game_squads SET is_featured = ? WHERE id = ?", [featured ? 1 : 0, squadId]);
+export async function featureSquad(squadId: number, featured: boolean): Promise<void> {
+    await execute("UPDATE game_squads SET is_featured = $1 WHERE id = $2", [featured ? 1 : 0, squadId]);
 }
 
-export async function incrementSquadWins(db: Database, squadId: number): Promise<void> {
-    await dbRun(db, "UPDATE game_squads SET wins = wins + 1 WHERE id = ?", [squadId]);
+export async function incrementSquadWins(squadId: number): Promise<void> {
+    await execute("UPDATE game_squads SET wins = wins + 1 WHERE id = $1", [squadId]);
 }
 
-export async function getSquadLeaderboard(db: Database): Promise<any[]> {
-    return dbAll(
-        db,
+export async function getSquadLeaderboard(): Promise<any[]> {
+    return query(
         "SELECT g.*, u.username as creator_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.wins DESC LIMIT 10"
     );
 }
 
-export async function getSquadCount(db: Database): Promise<number> {
-    const row = await dbGet<{ count: number }>(db, "SELECT COUNT(*) as count FROM game_squads");
+export async function getSquadCount(): Promise<number> {
+    const row = await queryOne<{ count: number }>("SELECT COUNT(*) as count FROM game_squads");
     return row?.count || 0;
 }
 
-export async function getPopularGames(db: Database): Promise<any[]> {
-    return dbAll(db, "SELECT game_name, COUNT(*) as count FROM game_squads GROUP BY game_name ORDER BY count DESC LIMIT 5");
+export async function getPopularGames(): Promise<any[]> {
+    return query("SELECT game_name, COUNT(*) as count FROM game_squads GROUP BY game_name ORDER BY count DESC LIMIT 5");
 }
 
-// ============ Squad Messages ============
-
-export async function getSquadMessages(db: Database, squadId: number): Promise<any[]> {
-    return dbAll(
-        db,
-        "SELECT sm.*, u.username FROM squad_messages sm JOIN users u ON sm.user_id = u.id WHERE sm.squad_id = ? ORDER BY sm.created_at ASC",
+export async function getSquadMessages(squadId: number): Promise<any[]> {
+    return query(
+        "SELECT sm.*, u.username FROM squad_messages sm JOIN users u ON sm.user_id = u.id WHERE sm.squad_id = $1 ORDER BY sm.created_at ASC",
         [squadId]
     );
 }
 
-export async function createSquadMessage(db: Database, squadId: number, userId: number, message: string): Promise<void> {
-    await dbRun(db, "INSERT INTO squad_messages (squad_id, user_id, message) VALUES (?, ?, ?)", [squadId, userId, message]);
+export async function createSquadMessage(squadId: number, userId: number, message: string): Promise<void> {
+    await execute("INSERT INTO squad_messages (squad_id, user_id, message) VALUES ($1, $2, $3)", [squadId, userId, message]);
 }
 
-// ============ Game Clips ============
-
-export async function getGameClips(db: Database, squadId: number): Promise<any[]> {
-    return dbAll(
-        db,
-        "SELECT gc.*, u.username FROM game_clips gc JOIN users u ON gc.user_id = u.id WHERE gc.squad_id = ? ORDER BY gc.created_at DESC",
+export async function getGameClips(squadId: number): Promise<any[]> {
+    return query(
+        "SELECT gc.*, u.username FROM game_clips gc JOIN users u ON gc.user_id = u.id WHERE gc.squad_id = $1 ORDER BY gc.created_at DESC",
         [squadId]
     );
 }
 
-export async function createGameClip(db: Database, data: { squadId: number; userId: number; clipUrl: string; description: string }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO game_clips (squad_id, user_id, clip_url, description) VALUES (?, ?, ?, ?)",
+export async function createGameClip(data: { squadId: number; userId: number; clipUrl: string; description: string }): Promise<void> {
+    await execute(
+        "INSERT INTO game_clips (squad_id, user_id, clip_url, description) VALUES ($1, $2, $3, $4)",
         [data.squadId, data.userId, data.clipUrl, data.description]
     );
 }
 
-// ============ Team Queries ============
-
-export async function getTeams(db: Database): Promise<any[]> {
-    return dbAll(db, "SELECT t.*, u.username as creator_username FROM teams t JOIN users u ON t.creator_id = u.id");
+export async function getTeams(): Promise<any[]> {
+    return query("SELECT t.*, u.username as creator_username FROM teams t JOIN users u ON t.creator_id = u.id");
 }
 
-export async function createTeam(db: Database, name: string, creatorId: number): Promise<{ id: number }> {
-    const result = await dbRun(db, "INSERT INTO teams (name, creator_id) VALUES (?, ?)", [name, creatorId]);
-    await dbRun(db, "INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", [result.lastID, creatorId]);
+export async function createTeam(name: string, creatorId: number): Promise<{ id: number }> {
+    const result = await execute("INSERT INTO teams (name, creator_id) VALUES ($1, $2)", [name, creatorId]);
+    await execute("INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)", [result.lastID, creatorId]);
     return { id: result.lastID };
 }
 
-export async function isTeamMember(db: Database, teamId: number, userId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT team_id FROM team_members WHERE team_id = ? AND user_id = ?", [teamId, userId]);
+export async function isTeamMember(teamId: number, userId: number): Promise<boolean> {
+    const row = await queryOne("SELECT team_id FROM team_members WHERE team_id = $1 AND user_id = $2", [teamId, userId]);
     return !!row;
 }
 
-export async function addTeamMember(db: Database, teamId: number, userId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", [teamId, userId]);
+export async function addTeamMember(teamId: number, userId: number): Promise<void> {
+    await execute("INSERT INTO team_members (team_id, user_id) VALUES ($1, $2)", [teamId, userId]);
 }
 
-export async function getTeamById(db: Database, teamId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM teams WHERE id = ?", [teamId]);
+export async function getTeamById(teamId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM teams WHERE id = $1", [teamId]);
 }
 
-// ============ Hype Battle Queries ============
-
-export async function getHypeBattles(db: Database, filters: { category?: string; isLive?: boolean }): Promise<any[]> {
-    let query = "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0";
+export async function getHypeBattles(filters: { category?: string; isLive?: boolean }): Promise<any[]> {
+    let queryText = "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0";
     const params: any[] = [];
+    let paramIndex = 1;
 
     if (filters.category) {
-        query += " AND h.category = ?";
+        queryText += ` AND h.category = $${paramIndex}`;
         params.push(filters.category);
+        paramIndex++;
     }
     if (filters.isLive !== undefined) {
-        query += " AND h.is_live = ?";
+        queryText += ` AND h.is_live = $${paramIndex}`;
         params.push(filters.isLive ? 1 : 0);
     }
 
-    query += " ORDER BY h.created_at DESC";
-    return dbAll(db, query, params);
+    queryText += " ORDER BY h.created_at DESC";
+    return query(queryText, params);
 }
 
-export async function getBattleById(db: Database, battleId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM hype_battles WHERE id = ?", [battleId]);
+export async function getBattleById(battleId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM hype_battles WHERE id = $1", [battleId]);
 }
 
-export async function createBattle(db: Database, data: {
+export async function createBattle(data: {
     userId: number;
     username: string;
     opponentId: number | null;
@@ -434,70 +370,62 @@ export async function createBattle(db: Database, data: {
     isLive: boolean;
     votingDeadline: string;
 }): Promise<{ id: number }> {
-    const result = await dbRun(
-        db,
-        "INSERT INTO hype_battles (user_id, username, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [data.userId, data.username, data.opponentId, data.teamId, data.opponentTeamId, data.category, data.content, data.mediaUrl, data.isLive ? 1 : 0, data.votingDeadline]
+    const result = await execute(
+        "INSERT INTO hype_battles (user_id, opponent_id, team_id, opponent_team_id, category, content, media_url, is_live, voting_deadline) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        [data.userId, data.opponentId, data.teamId, data.opponentTeamId, data.category, data.content, data.mediaUrl, data.isLive ? 1 : 0, data.votingDeadline]
     );
     return { id: result.lastID };
 }
 
-export async function respondToBattle(db: Database, battleId: number, content: string, mediaUrl: string | null): Promise<void> {
-    await dbRun(db, "UPDATE hype_battles SET content = ?, opponent_media_url = ? WHERE id = ?", [content, mediaUrl, battleId]);
+export async function respondToBattle(battleId: number, content: string, mediaUrl: string | null): Promise<void> {
+    await execute("UPDATE hype_battles SET content = $1, opponent_media_url = $2 WHERE id = $3", [content, mediaUrl, battleId]);
 }
 
-export async function incrementBattleVotes(db: Database, battleId: number, field: "votes" | "opponent_votes"): Promise<void> {
-    await dbRun(db, `UPDATE hype_battles SET ${field} = ${field} + 1 WHERE id = ?`, [battleId]);
+export async function incrementBattleVotes(battleId: number, field: "votes" | "opponent_votes"): Promise<void> {
+    await execute(`UPDATE hype_battles SET ${field} = ${field} + 1 WHERE id = $1`, [battleId]);
 }
 
-export async function closeBattle(db: Database, battleId: number, winnerId: number | null): Promise<void> {
-    await dbRun(db, "UPDATE hype_battles SET closed = 1, winner_id = ? WHERE id = ?", [winnerId, battleId]);
+export async function closeBattle(battleId: number, winnerId: number | null): Promise<void> {
+    await execute("UPDATE hype_battles SET closed = 1, winner_id = $1 WHERE id = $2", [winnerId, battleId]);
 }
 
-export async function getExpiredBattles(db: Database): Promise<any[]> {
-    return dbAll(
-        db,
-        "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < DATETIME('now') AND closed = 0"
+export async function getExpiredBattles(): Promise<any[]> {
+    return query(
+        "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < NOW() AND closed = 0"
     );
 }
 
-export async function getBattleWins(db: Database, userId: number): Promise<number> {
-    const row = await dbGet<{ wins: number }>(db, "SELECT COUNT(*) as wins FROM hype_battles WHERE winner_id = ? AND closed = 1", [userId]);
+export async function getBattleWins(userId: number): Promise<number> {
+    const row = await queryOne<{ wins: number }>("SELECT COUNT(*) as wins FROM hype_battles WHERE winner_id = $1 AND closed = 1", [userId]);
     return row?.wins || 0;
 }
 
-// ============ Voting Queries ============
-
-export async function hasVotedForBattle(db: Database, userId: number, battleId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT id FROM battle_votes WHERE user_id = ? AND battle_id = ?", [userId, battleId]);
+export async function hasVotedForBattle(userId: number, battleId: number): Promise<boolean> {
+    const row = await queryOne("SELECT id FROM battle_votes WHERE user_id = $1 AND battle_id = $2", [userId, battleId]);
     return !!row;
 }
 
-export async function castBattleVote(db: Database, userId: number, battleId: number, voteFor: string): Promise<void> {
-    await dbRun(db, "INSERT INTO battle_votes (user_id, battle_id, vote_for) VALUES (?, ?, ?)", [userId, battleId, voteFor]);
+export async function castBattleVote(userId: number, battleId: number, voteFor: string): Promise<void> {
+    await execute("INSERT INTO battle_votes (user_id, battle_id, vote_for) VALUES ($1, $2, $3)", [userId, battleId, voteFor]);
 }
 
-export async function hasVotedForShowdown(db: Database, userId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT id FROM showdown_votes WHERE user_id = ?", [userId]);
+export async function hasVotedForShowdown(userId: number): Promise<boolean> {
+    const row = await queryOne("SELECT id FROM showdown_votes WHERE user_id = $1", [userId]);
     return !!row;
 }
 
-export async function castShowdownVote(db: Database, userId: number, dateOption: string): Promise<void> {
-    await dbRun(db, "INSERT INTO showdown_votes (user_id, date_option) VALUES (?, ?)", [userId, dateOption]);
+export async function castShowdownVote(userId: number, dateOption: string): Promise<void> {
+    await execute("INSERT INTO showdown_votes (user_id, date_option) VALUES ($1, $2)", [userId, dateOption]);
 }
 
-// ============ Tournament Queries ============
-
-export async function getTournaments(db: Database): Promise<any[]> {
-    const tournaments = await dbAll(
-        db,
-        "SELECT t.*, g.game_name as squad_game_name, g.username as creator_username FROM tournaments t JOIN game_squads g ON t.squad_id = g.id ORDER BY t.created_at DESC"
+export async function getTournaments(): Promise<any[]> {
+    const tournaments = await query(
+        "SELECT t.*, g.game_name as squad_game_name, g.uid as creator_username FROM tournaments t JOIN game_squads g ON t.squad_id = g.id ORDER BY t.created_at DESC"
     );
 
     for (const tournament of tournaments) {
-        tournament.participants = await dbAll(
-            db,
-            "SELECT g.id, g.game_name, g.username FROM tournament_participants tp JOIN game_squads g ON tp.squad_id = g.id WHERE tp.tournament_id = ?",
+        tournament.participants = await query(
+            "SELECT g.id, g.game_name, g.uid FROM tournament_participants tp JOIN game_squads g ON tp.squad_id = g.id WHERE tp.tournament_id = $1",
             [tournament.id]
         );
     }
@@ -505,123 +433,113 @@ export async function getTournaments(db: Database): Promise<any[]> {
     return tournaments;
 }
 
-export async function createTournament(db: Database, data: { squadId: number; title: string; description: string; gameName: string }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO tournaments (squad_id, title, description, game_name) VALUES (?, ?, ?, ?)",
+export async function createTournament(data: { squadId: number; title: string; description: string; gameName: string }): Promise<void> {
+    await execute(
+        "INSERT INTO tournaments (squad_id, title, description, game_name) VALUES ($1, $2, $3, $4)",
         [data.squadId, data.title, data.description, data.gameName]
     );
 }
 
-export async function updateTournament(db: Database, tournamentId: number, updates: Record<string, any>): Promise<void> {
-    const fields = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
-    await dbRun(db, `UPDATE tournaments SET ${fields} WHERE id = ?`, [...Object.values(updates), tournamentId]);
+export async function updateTournament(tournamentId: number, updates: Record<string, any>): Promise<void> {
+    const keys = Object.keys(updates);
+    const values = Object.values(updates);
+    const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(", ");
+    await execute(`UPDATE tournaments SET ${setClause} WHERE id = $${keys.length + 1}`, [...values, tournamentId]);
 }
 
-export async function joinTournament(db: Database, tournamentId: number, squadId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO tournament_participants (tournament_id, squad_id) VALUES (?, ?)", [tournamentId, squadId]);
+export async function joinTournament(tournamentId: number, squadId: number): Promise<void> {
+    await execute("INSERT INTO tournament_participants (tournament_id, squad_id) VALUES ($1, $2)", [tournamentId, squadId]);
 }
 
-export async function hasJoinedTournament(db: Database, tournamentId: number, squadId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT id FROM tournament_participants WHERE tournament_id = ? AND squad_id = ?", [tournamentId, squadId]);
+export async function hasJoinedTournament(tournamentId: number, squadId: number): Promise<boolean> {
+    const row = await queryOne("SELECT id FROM tournament_participants WHERE tournament_id = $1 AND squad_id = $2", [tournamentId, squadId]);
     return !!row;
 }
 
-// ============ Showdown Queries ============
-
-export async function getCurrentShowdownTournament(db: Database): Promise<any | null> {
-    return dbGet(db, "SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1");
+export async function getCurrentShowdownTournament(): Promise<any | undefined> {
+    return queryOne("SELECT id FROM showdown_tournaments WHERE status = 'open' ORDER BY created_at DESC LIMIT 1");
 }
 
-export async function addShowdownParticipant(db: Database, tournamentId: number, userId: number, status: string): Promise<void> {
-    await dbRun(db, "INSERT INTO showdown_participants (tournament_id, user_id, status) VALUES (?, ?, ?)", [tournamentId, userId, status]);
+export async function addShowdownParticipant(tournamentId: number, userId: number, status: string): Promise<void> {
+    await execute("INSERT INTO showdown_participants (tournament_id, user_id, status) VALUES ($1, $2, $3)", [tournamentId, userId, status]);
 }
 
-export async function getShowdownParticipant(db: Database, tournamentId: number, userId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM showdown_participants WHERE tournament_id = ? AND user_id = ?", [tournamentId, userId]);
+export async function getShowdownParticipant(tournamentId: number, userId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM showdown_participants WHERE tournament_id = $1 AND user_id = $2", [tournamentId, userId]);
 }
 
-export async function getShowdownBracket(db: Database, tournamentId: number): Promise<any[]> {
-    return dbAll(
-        db,
-        "SELECT sp.*, u.username FROM showdown_participants sp JOIN users u ON sp.user_id = u.id WHERE sp.tournament_id = ? AND sp.status = 'active'",
+export async function getShowdownBracket(tournamentId: number): Promise<any[]> {
+    return query(
+        "SELECT sp.*, u.username FROM showdown_participants sp JOIN users u ON sp.user_id = u.id WHERE sp.tournament_id = $1 AND sp.status = 'active'",
         [tournamentId]
     );
 }
 
-// ============ Shop Queries ============
-
-export async function getShopItems(db: Database, category?: string): Promise<any[]> {
+export async function getShopItems(category?: string): Promise<any[]> {
     if (category && category !== "all") {
-        return dbAll(db, "SELECT * FROM shop_items WHERE category = ?", [category]);
+        return query("SELECT * FROM shop_items WHERE category = $1", [category]);
     }
-    return dbAll(db, "SELECT * FROM shop_items");
+    return query("SELECT * FROM shop_items");
 }
 
-export async function getShopItemById(db: Database, itemId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM shop_items WHERE id = ?", [itemId]);
+export async function getShopItemById(itemId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM shop_items WHERE id = $1", [itemId]);
 }
 
-export async function purchaseItem(db: Database, userId: number, itemId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO user_inventory (user_id, item_id) VALUES (?, ?)", [userId, itemId]);
+export async function purchaseItem(userId: number, itemId: number): Promise<void> {
+    await execute("INSERT INTO user_inventory (user_id, item_id) VALUES ($1, $2)", [userId, itemId]);
 }
 
-export async function decrementStock(db: Database, itemId: number): Promise<void> {
-    await dbRun(db, "UPDATE shop_items SET stock = stock - 1 WHERE id = ? AND stock IS NOT NULL", [itemId]);
+export async function decrementStock(itemId: number): Promise<void> {
+    await execute("UPDATE shop_items SET stock = stock - 1 WHERE id = $1 AND stock IS NOT NULL", [itemId]);
 }
 
-// ============ DM/Conversation Queries ============
-
-export async function getConversations(db: Database, userId: number): Promise<any[]> {
-    return dbAll(
-        db,
+export async function getConversations(userId: number): Promise<any[]> {
+    return query(
         `SELECT c.*, 
                 CASE 
-                    WHEN c.user1_id = ? THEN u2.username 
-                    WHEN c.user2_id = ? THEN u1.username 
+                    WHEN c.user1_id = $1 THEN u2.username 
+                    WHEN c.user2_id = $1 THEN u1.username 
                 END as other_username
         FROM conversations c
         LEFT JOIN users u1 ON c.user1_id = u1.id
         LEFT JOIN users u2 ON c.user2_id = u2.id
-        WHERE c.user1_id = ? OR c.user2_id = ?
+        WHERE c.user1_id = $1 OR c.user2_id = $1
         ORDER BY c.is_boosted DESC, c.created_at DESC`,
-        [userId, userId, userId, userId]
+        [userId]
     );
 }
 
-export async function getConversation(db: Database, conversationId: number, userId: number): Promise<any | null> {
-    return dbGet(db, "SELECT * FROM conversations WHERE id = ? AND (user1_id = ? OR user2_id = ?)", [conversationId, userId, userId]);
+export async function getConversation(conversationId: number, userId: number): Promise<any | undefined> {
+    return queryOne("SELECT * FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)", [conversationId, userId]);
 }
 
-export async function findConversation(db: Database, userId1: number, userId2: number): Promise<any | null> {
-    return dbGet(
-        db,
-        "SELECT * FROM conversations WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)",
-        [userId1, userId2, userId2, userId1]
+export async function findConversation(userId1: number, userId2: number): Promise<any | undefined> {
+    return queryOne(
+        "SELECT * FROM conversations WHERE (user1_id = $1 AND user2_id = $2) OR (user1_id = $2 AND user2_id = $1)",
+        [userId1, userId2]
     );
 }
 
-export async function createConversation(db: Database, userId1: number, userId2: number): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO conversations (user1_id, user2_id, created_at, is_boosted) VALUES (?, ?, ?, ?)",
+export async function createConversation(userId1: number, userId2: number): Promise<void> {
+    await execute(
+        "INSERT INTO conversations (user1_id, user2_id, created_at, is_boosted) VALUES ($1, $2, $3, $4)",
         [userId1, userId2, new Date().toISOString(), 0]
     );
 }
 
-export async function getMessages(db: Database, conversationId: number): Promise<any[]> {
-    return dbAll(
-        db,
-        "SELECT m.*, u.username as sender_username FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.conversation_id = ? ORDER BY m.created_at ASC",
+export async function getMessages(conversationId: number): Promise<any[]> {
+    return query(
+        "SELECT m.*, u.username as sender_username FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.conversation_id = $1 ORDER BY m.created_at ASC",
         [conversationId]
     );
 }
 
-export async function getLatestMessage(db: Database, conversationId: number): Promise<any | null> {
-    return dbGet(db, "SELECT content, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1", [conversationId]);
+export async function getLatestMessage(conversationId: number): Promise<any | undefined> {
+    return queryOne("SELECT content, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1", [conversationId]);
 }
 
-export async function createMessage(db: Database, data: {
+export async function createMessage(data: {
     conversationId: number;
     senderId: number;
     content: string;
@@ -629,99 +547,83 @@ export async function createMessage(db: Database, data: {
     mediaType?: string | null;
     isGhostBomb?: boolean;
 }): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    await execute(
+        "INSERT INTO messages (conversation_id, sender_id, content, media_url, media_type, created_at, is_ghost_bomb) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         [data.conversationId, data.senderId, data.content, data.mediaUrl || null, data.mediaType || null, new Date().toISOString(), data.isGhostBomb ? 1 : 0]
     );
 }
 
-export async function boostConversation(db: Database, conversationId: number): Promise<void> {
-    await dbRun(db, "UPDATE conversations SET is_boosted = 1 WHERE id = ?", [conversationId]);
+export async function boostConversation(conversationId: number): Promise<void> {
+    await execute("UPDATE conversations SET is_boosted = 1 WHERE id = $1", [conversationId]);
 }
 
-// ============ Privacy/Block Queries ============
-
-export async function getBlockList(db: Database, userId: number): Promise<any[]> {
-    return dbAll(
-        db,
-        `SELECT u.username, u.id as blocked_user_id FROM blocked_users b JOIN users u ON b.blocked_user_id = u.id WHERE b.user_id = ?`,
+export async function getBlockList(userId: number): Promise<any[]> {
+    return query(
+        `SELECT u.username, u.id as blocked_user_id FROM blocked_users b JOIN users u ON b.blocked_user_id = u.id WHERE b.user_id = $1`,
         [userId]
     );
 }
 
-export async function isBlocked(db: Database, userId: number, blockedUserId: number): Promise<boolean> {
-    const row = await dbGet(db, "SELECT * FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?", [userId, blockedUserId]);
+export async function isBlocked(userId: number, blockedUserId: number): Promise<boolean> {
+    const row = await queryOne("SELECT * FROM blocked_users WHERE user_id = $1 AND blocked_user_id = $2", [userId, blockedUserId]);
     return !!row;
 }
 
-export async function blockUser(db: Database, userId: number, blockedUserId: number): Promise<void> {
-    await dbRun(db, "INSERT INTO blocked_users (user_id, blocked_user_id) VALUES (?, ?)", [userId, blockedUserId]);
+export async function blockUser(userId: number, blockedUserId: number): Promise<void> {
+    await execute("INSERT INTO blocked_users (user_id, blocked_user_id) VALUES ($1, $2)", [userId, blockedUserId]);
 }
 
-export async function unblockUser(db: Database, userId: number, blockedUserId: number): Promise<void> {
-    await dbRun(db, "DELETE FROM blocked_users WHERE user_id = ? AND blocked_user_id = ?", [userId, blockedUserId]);
+export async function unblockUser(userId: number, blockedUserId: number): Promise<void> {
+    await execute("DELETE FROM blocked_users WHERE user_id = $1 AND blocked_user_id = $2", [userId, blockedUserId]);
 }
 
-// ============ Snitch Status ============
-
-export async function getAllUsers(db: Database): Promise<any[]> {
-    return dbAll(db, "SELECT id, xp FROM users");
+export async function getAllUsers(): Promise<any[]> {
+    return query("SELECT id, xp FROM users");
 }
 
-export async function getWeeklyXP(db: Database, userId: number): Promise<number> {
-    const row = await dbGet<{ weekly_xp: number }>(
-        db,
-        "SELECT SUM(xp) as weekly_xp FROM posts WHERE user_id = ? AND created_at >= datetime('now', '-7 days')",
+export async function getWeeklyXP(userId: number): Promise<number> {
+    const row = await queryOne<{ weekly_xp: number }>(
+        "SELECT SUM(p.xp) as weekly_xp FROM posts p WHERE p.user_id = $1 AND p.created_at >= NOW() - INTERVAL '7 days'",
         [userId]
     );
     return row?.weekly_xp || 0;
 }
 
-export async function updateSnitchStatus(db: Database, userId: number, status: string): Promise<void> {
-    await dbRun(db, "UPDATE users SET snitch_status = ? WHERE id = ?", [status, userId]);
+export async function updateSnitchStatus(userId: number, status: string): Promise<void> {
+    await execute("UPDATE users SET snitch_status = $1 WHERE id = $2", [status, userId]);
 }
 
-// ============ Badges ============
-
-export async function setNewsKingBadge(db: Database, userId: number): Promise<void> {
-    await dbRun(
-        db,
-        "INSERT INTO badges (user_id, news_king) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET news_king = 1",
+export async function setNewsKingBadge(userId: number): Promise<void> {
+    await execute(
+        "INSERT INTO badges (user_id, news_king) VALUES ($1, 1) ON CONFLICT(user_id) DO UPDATE SET news_king = 1",
         [userId]
     );
 }
 
-// ============ Developer Picks ============
-
-export async function setDeveloperPick(db: Database, userId: number, title: string): Promise<void> {
-    await dbRun(db, "INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)", [userId, title]);
+export async function setDeveloperPick(userId: number, title: string): Promise<void> {
+    await execute("INSERT INTO developer_picks (user_id, title) VALUES ($1, $2) ON CONFLICT(user_id) DO NOTHING", [userId, title]);
 }
 
-// ============ Analytics ============
-
-export async function getAnalytics(db: Database): Promise<{ totalUsers: number; totalSquads: number; totalPosts: number; popularGames: any[] }> {
+export async function getAnalytics(): Promise<{ totalUsers: number; totalSquads: number; totalPosts: number; popularGames: any[] }> {
     const [totalUsers, totalSquads, totalPosts, popularGames] = await Promise.all([
-        getUserCount(db),
-        getSquadCount(db),
-        getPostCount(db),
-        getPopularGames(db),
+        getUserCount(),
+        getSquadCount(),
+        getPostCount(),
+        getPopularGames(),
     ]);
 
     return { totalUsers, totalSquads, totalPosts, popularGames };
 }
 
-// ============ Cleanup ============
-
-export async function cleanupExpiredUndercoverPosts(db: Database): Promise<void> {
-    await dbRun(db, `
+export async function cleanupExpiredUndercoverPosts(): Promise<void> {
+    await execute(`
         DELETE FROM posts 
         WHERE mode = 'undercover' 
         AND likes < 50 
-        AND created_at < DATETIME('now', '-1 day')
+        AND created_at < NOW() - INTERVAL '1 day'
     `);
 }
 
-export async function clearAllUsers(db: Database): Promise<void> {
-    await dbRun(db, "DELETE FROM users");
+export async function clearAllUsers(): Promise<void> {
+    await execute("DELETE FROM users");
 }

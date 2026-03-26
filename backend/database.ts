@@ -1,113 +1,84 @@
-import sqlite3 from "sqlite3";
-import path from "path";
-import { backupDatabase, restoreDatabase } from "./backup";
+import { Pool } from "pg";
+import dotenv from "dotenv";
 
-const dbPath = path.join(__dirname, "../users.db");
-console.log(`[${new Date().toISOString()}] Database path: ${dbPath}`);
+dotenv.config();
 
-export const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error(`[${new Date().toISOString()}] Error opening database:`, err.message);
-  } else {
-    console.log(`[${new Date().toISOString()}] Connected to SQLite database.`);
-  }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-db.on("trace", (sql) => {
-  console.log(`[${new Date().toISOString()}] SQL Query: ${sql}`);
+pool.on("error", (err) => {
+  console.error(`[${new Date().toISOString()}] Unexpected database error:`, err);
 });
 
-restoreDatabase().then(() => {
-  console.log(`[${new Date().toISOString()}] Database restore completed`);
-}).catch((err) => {
-  console.error(`[${new Date().toISOString()}] Restore database error:`, err.message);
-  console.log(`[${new Date().toISOString()}] Continuing with local users.db`);
-});
+export const db = pool;
 
-setInterval(backupDatabase, 24 * 60 * 60 * 1000);
-setTimeout(backupDatabase, 5 * 60 * 1000);
-
-// ==================== Transaction Helpers ====================
-
-export function beginTransaction(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.run("BEGIN IMMEDIATE", (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
+  const start = Date.now();
+  const result = await pool.query(text, params);
+  const duration = Date.now() - start;
+  console.log(`[${new Date().toISOString()}] SQL Query: ${text} | Duration: ${duration}ms`);
+  return result.rows as T[];
 }
 
-export function commitTransaction(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.run("COMMIT", (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+export async function queryOne<T = any>(text: string, params?: any[]): Promise<T | undefined> {
+  const results = await query<T>(text, params);
+  return results[0];
 }
 
-export function rollbackTransaction(): Promise<void> {
-  return new Promise((resolve) => {
-    db.run("ROLLBACK", () => resolve());
-  });
+export async function execute(text: string, params?: any[]): Promise<{ lastID: number; changes: number }> {
+  const start = Date.now();
+  const result = await pool.query(text, params);
+  const duration = Date.now() - start;
+  console.log(`[${new Date().toISOString()}] SQL Execute: ${text} | Duration: ${duration}ms`);
+  return {
+    lastID: result.rows[0]?.id || 0,
+    changes: result.rowCount || 0
+  };
 }
 
 export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
-  await beginTransaction();
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     const result = await fn();
-    await commitTransaction();
+    await client.query("COMMIT");
     return result;
   } catch (err) {
-    await rollbackTransaction();
+    await client.query("ROLLBACK");
     throw err;
+  } finally {
+    client.release();
   }
 }
 
-// ==================== Query Helpers ====================
-
-export function dbGet<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row: T) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+export async function dbGet<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+  return queryOne<T>(sql, params);
 }
 
-export function dbAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows: T[]) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
+export async function dbAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  return query<T>(sql, params);
 }
 
-export function dbRun(sql: string, params: any[] = []): Promise<sqlite3.RunResult> {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve(this);
-    });
-  });
+export async function dbRun(sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> {
+  const result = await execute(sql, params);
+  const idResult = await queryOne<{ id: number }>("SELECT LASTVAL() as id");
+  return {
+    lastID: idResult?.id || 0,
+    changes: result.changes
+  };
 }
 
-// ==================== Schema Creation ====================
+export async function initializeDatabase(): Promise<void> {
+  console.log(`[${new Date().toISOString()}] Initializing PostgreSQL database...`);
 
-db.serialize(() => {
-  // ===== Performance Pragmas =====
-  db.run("PRAGMA journal_mode = WAL");
-  db.run("PRAGMA foreign_keys = ON");
-  db.run("PRAGMA cache_size = -32000");
-  db.run("PRAGMA synchronous = NORMAL");
-  db.run("PRAGMA busy_timeout = 5000");
-
-  // ===== Users Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
@@ -116,7 +87,7 @@ db.serialize(() => {
       xp INTEGER DEFAULT 0 NOT NULL,
       coins INTEGER DEFAULT 0 NOT NULL,
       snitch_status TEXT,
-      creator_badge INTEGER DEFAULT 0,
+      creator_badge TEXT DEFAULT '',
       is_admin INTEGER DEFAULT 0,
       tier INTEGER DEFAULT 1 NOT NULL,
       wins INTEGER DEFAULT 0 NOT NULL,
@@ -135,153 +106,123 @@ db.serialize(() => {
       profile_media_url TEXT,
       profile_media_type TEXT,
       last_login TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Badges Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS badges (
-      user_id INTEGER PRIMARY KEY NOT NULL,
-      news_king INTEGER DEFAULT 0,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      news_king INTEGER DEFAULT 0
     )
   `);
 
-  // ===== Posts Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS posts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT,
       mode TEXT DEFAULT 'main',
       likes INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       media_url TEXT,
       media_type TEXT,
-      reactions TEXT DEFAULT '{}',
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      reactions JSONB DEFAULT '{}'::jsonb
     )
   `);
 
-  // ===== Likes Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS likes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      post_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(post_id, user_id)
     )
   `);
 
-  // ===== Comments Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      post_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
-      created_at TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       pinned INTEGER DEFAULT 0,
-      likes INTEGER DEFAULT 0,
-      FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      likes INTEGER DEFAULT 0
     )
   `);
 
-  // ===== Replies Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS replies (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      comment_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Comment Likes Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS comment_likes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      comment_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(comment_id) REFERENCES comments(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(comment_id, user_id)
     )
   `);
 
-  // ===== Post Shares Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS post_shares (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      post_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       squad_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Conversations Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS conversations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user1_id INTEGER NOT NULL,
-      user2_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user1_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user2_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       is_boosted INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user1_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(user2_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user1_id, user2_id),
       CHECK(user1_id < user2_id)
     )
   `);
 
-  // ===== Messages Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      conversation_id INTEGER NOT NULL,
-      sender_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
       media_url TEXT,
       media_type TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      is_ghost_bomb INTEGER DEFAULT 0,
-      FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
-      FOREIGN KEY(sender_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      is_ghost_bomb INTEGER DEFAULT 0
     )
   `);
 
-  // ===== Blocked Users Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS blocked_users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      blocked_user_id INTEGER NOT NULL,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, blocked_user_id),
       CHECK(user_id != blocked_user_id)
     )
   `);
 
-  // ===== Game Squads Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS game_squads (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       game_name TEXT NOT NULL,
       uid TEXT NOT NULL,
       description TEXT,
@@ -289,109 +230,87 @@ db.serialize(() => {
       max_members INTEGER DEFAULT 5,
       wins INTEGER DEFAULT 0,
       is_featured INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Squad Members Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS squad_members (
-      squad_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (squad_id, user_id),
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      squad_id INTEGER NOT NULL REFERENCES game_squads(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (squad_id, user_id)
     )
   `);
 
-  // ===== Squad Messages Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS squad_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      squad_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      squad_id INTEGER NOT NULL REFERENCES game_squads(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       message TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Game Clips Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS game_clips (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      squad_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      squad_id INTEGER NOT NULL REFERENCES game_squads(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       clip_url TEXT NOT NULL,
       description TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Tournaments Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS tournaments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      squad_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      squad_id INTEGER NOT NULL REFERENCES game_squads(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT,
       game_name TEXT,
       status TEXT DEFAULT 'open',
       winner_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE,
-      FOREIGN KEY(winner_id) REFERENCES game_squads(id) ON DELETE SET NULL
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Tournament Participants Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS tournament_participants (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tournament_id INTEGER NOT NULL,
-      squad_id INTEGER NOT NULL,
-      FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-      FOREIGN KEY(squad_id) REFERENCES game_squads(id) ON DELETE CASCADE,
+      id SERIAL PRIMARY KEY,
+      tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      squad_id INTEGER NOT NULL REFERENCES game_squads(id) ON DELETE CASCADE,
       UNIQUE(tournament_id, squad_id)
     )
   `);
 
-  // ===== Teams Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS teams (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      creator_id INTEGER NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(creator_id) REFERENCES users(id) ON DELETE CASCADE
+      creator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Team Members Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS team_members (
-      team_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (team_id, user_id),
-      FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      PRIMARY KEY (team_id, user_id)
     )
   `);
 
-  // ===== Hype Battles Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS hype_battles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      opponent_id INTEGER,
-      team_id INTEGER,
-      opponent_team_id INTEGER,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      opponent_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      opponent_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
       category TEXT NOT NULL,
       content TEXT,
       media_url TEXT,
@@ -399,217 +318,173 @@ db.serialize(() => {
       opponent_votes INTEGER DEFAULT 0,
       is_live INTEGER DEFAULT 0,
       voting_deadline TIMESTAMP,
-      winner_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       closed INTEGER DEFAULT 0,
       tournament_id INTEGER,
-      opponent_media_url TEXT,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(opponent_id) REFERENCES users(id) ON DELETE SET NULL,
-      FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE SET NULL,
-      FOREIGN KEY(opponent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
-      FOREIGN KEY(winner_id) REFERENCES users(id) ON DELETE SET NULL,
-      FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id) ON DELETE SET NULL
+      opponent_media_url TEXT
     )
   `);
 
-  // ===== Battle Votes Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS battle_votes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      battle_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      battle_id INTEGER NOT NULL REFERENCES hype_battles(id) ON DELETE CASCADE,
       vote_for TEXT NOT NULL,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(battle_id) REFERENCES hype_battles(id) ON DELETE CASCADE,
       UNIQUE(user_id, battle_id)
     )
   `);
 
-  // ===== Showdown Tournaments Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_tournaments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       season TEXT,
       status TEXT,
       start_date TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      winner_id INTEGER,
-      FOREIGN KEY(winner_id) REFERENCES users(id) ON DELETE SET NULL
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL
     )
   `);
 
-  // ===== Showdown Participants Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_participants (
-      tournament_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       status TEXT,
       bracket_position INTEGER,
-      FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
       PRIMARY KEY (tournament_id, user_id)
     )
   `);
 
-  // ===== Showdown Votes Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_votes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       date_option TEXT NOT NULL,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
       UNIQUE(user_id)
     )
   `);
 
-  // ===== Showdown Schedule Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_schedule (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       date TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Showdown Clips Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_clips (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tournament_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       clip_url TEXT NOT NULL,
       category TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, tournament_id, category)
     )
   `);
 
-  // ===== Showdown Clip Votes Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_clip_votes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      clip_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      clip_id INTEGER NOT NULL REFERENCES showdown_clips(id) ON DELETE CASCADE,
       category TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(clip_id) REFERENCES showdown_clips(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, category)
     )
   `);
 
-  // ===== Showdown Boosts Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS showdown_boosts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tournament_id INTEGER NOT NULL,
-      battle_id INTEGER,
-      user_id INTEGER NOT NULL,
-      target_user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
+      battle_id INTEGER REFERENCES hype_battles(id) ON DELETE SET NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      target_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       coins_spent INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
-      FOREIGN KEY(battle_id) REFERENCES hype_battles(id) ON DELETE SET NULL,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(target_user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Coin Flip History Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS coin_flip_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       bet_amount INTEGER NOT NULL,
       won_amount INTEGER NOT NULL,
       result TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Profile Borders Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS profile_borders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       border_style TEXT NOT NULL,
-      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Hall of Fame Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS hall_of_fame (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      tournament_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
       rank INTEGER,
-      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(tournament_id) REFERENCES showdown_tournaments(id) ON DELETE CASCADE
+      awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Post Hall of Fame Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS post_hall_of_fame (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      post_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
       total_likes INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id)
     )
   `);
 
-  // ===== Developer Picks Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS developer_picks (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       title TEXT,
-      awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+      awarded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id)
     )
   `);
 
-  // ===== Rants Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS rants (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
       category TEXT NOT NULL,
       upvotes INTEGER DEFAULT 0,
-      reactions TEXT DEFAULT '{}',
+      reactions JSONB DEFAULT '{}'::jsonb,
       hugs INTEGER DEFAULT 0,
       ask_for_advice INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Rant Comments Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS rant_comments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      rant_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      rant_id INTEGER NOT NULL REFERENCES rants(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(rant_id) REFERENCES rants(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Shop Items Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS shop_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       category TEXT NOT NULL,
       price INTEGER NOT NULL,
@@ -620,80 +495,55 @@ db.serialize(() => {
     )
   `);
 
-  // ===== User Inventory Table =====
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS user_inventory (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      item_id INTEGER NOT NULL,
-      purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY(item_id) REFERENCES shop_items(id) ON DELETE CASCADE
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES shop_items(id) ON DELETE CASCADE,
+      purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // ===== Performance Indexes =====
+  await query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_posts_mode ON posts(mode)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_posts_mode_created ON posts(mode, created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_posts_user_created ON posts(user_id, created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at ASC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_replies_comment_id ON replies(comment_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_likes_post_user ON likes(post_id, user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_squad_messages_squad ON squad_messages(squad_id, created_at ASC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_game_clips_squad ON game_clips(squad_id, created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_showdown_participants_user ON showdown_participants(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_hype_battles_user_closed ON hype_battles(user_id, closed)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_hype_battles_deadline ON hype_battles(voting_deadline, closed)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_battle_votes_user_battle ON battle_votes(user_id, battle_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)`);
 
-  // Core user lookups
-  db.run("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)");
-
-  // Posts indexes - critical for feed queries
-  db.run("CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_posts_mode ON posts(mode)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_posts_mode_created ON posts(mode, created_at DESC)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_posts_user_created ON posts(user_id, created_at DESC)");
-
-  // Comments indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at ASC)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_replies_comment_id ON replies(comment_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id)");
-
-  // Like indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_likes_post_user ON likes(post_id, user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes(user_id)");
-
-  // DM indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)");
-
-  // Squad indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_squad_messages_squad ON squad_messages(squad_id, created_at ASC)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_game_clips_squad ON game_clips(squad_id, created_at DESC)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_post_shares_post ON post_shares(post_id)");
-
-  // Showdown/tournament indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_tournament ON showdown_participants(tournament_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_showdown_participants_user ON showdown_participants(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_showdown_boosts_tournament ON showdown_boosts(tournament_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_hall_of_fame_user ON hall_of_fame(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_tournament ON hype_battles(tournament_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_user_closed ON hype_battles(user_id, closed)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_hype_battles_deadline ON hype_battles(voting_deadline, closed)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clips_tournament ON showdown_clips(tournament_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_showdown_clip_votes_user ON showdown_clip_votes(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_battle_votes_user_battle ON battle_votes(user_id, battle_id)");
-
-  // Rant indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_rants_category ON rants(category)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_rant_comments_rant ON rant_comments(rant_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_post_hall_of_fame_user ON post_hall_of_fame(user_id)");
-
-  // Shop indexes
-  db.run("CREATE INDEX IF NOT EXISTS idx_developer_picks_user ON developer_picks(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_user_id ON user_inventory(user_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_user_inventory_item_id ON user_inventory(item_id)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_shop_items_category ON shop_items(category)");
-
-  // Blocked users
-  db.run("CREATE INDEX IF NOT EXISTS idx_blocked_users_user ON blocked_users(user_id)");
-
-  // ===== Seed Shop Items =====
   const initialItems = [
     { name: 'Sports Car', category: 'vehicle', price: 500, image_url: 'https://i.postimg.cc/QdYFWggv/image-fx.png', description: 'A sleek virtual sports car for your profile.', is_limited: 0 },
     { name: 'Motorcycle', category: 'vehicle', price: 350, image_url: 'https://i.postimg.cc/m2bkXp80/image-fx-1.png', description: 'A cool virtual bike for cruising.', is_limited: 0 },
@@ -722,69 +572,31 @@ db.serialize(() => {
     { name: 'Holographic Shield', category: 'accessory', price: 420, image_url: 'https://i.postimg.cc/KYbHBLZr/image-fx-25.png', description: 'Defend in style.', is_limited: 0 },
   ];
 
-  initialItems.forEach(item => {
-    db.run(
-      `INSERT OR IGNORE INTO shop_items (name, category, price, image_url, description, is_limited, stock) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [item.name, item.category, item.price, item.image_url, item.description, item.is_limited, item.stock],
-      (err) => {
-        if (err) console.error(`[${new Date().toISOString()}] Error seeding item ${item.name}:`, err);
-      }
+  for (const item of initialItems) {
+    await query(
+      `INSERT INTO shop_items (name, category, price, image_url, description, is_limited, stock) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT DO NOTHING`,
+      [item.name, item.category, item.price, item.image_url, item.description, item.is_limited, item.stock || null]
     );
-  });
+  }
 
-  // ===== Creator Badge Setup =====
-  const creatorEmail = process.env.ADMIN_EMAIL || 'restorationmichael3@gmail.com';
-  db.get(
-    "SELECT id, username FROM users WHERE email = ?",
-    [creatorEmail],
-    (err, user: any) => {
-      if (err) {
-        console.error(`[${new Date().toISOString()}] Error fetching user for creator badge:`, err);
-        return;
-      }
-      if (user) {
-        db.run(
-          `UPDATE users SET creator_badge = 'Platform Creator', is_admin = 1 WHERE id = ?`,
-          [user.id],
-          (err) => {
-            if (err) console.error(`[${new Date().toISOString()}] Error setting creator badge:`, err);
-            else console.log(`[${new Date().toISOString()}] Creator badge and admin set for ${creatorEmail}`);
-          }
-        );
-
-        db.run(
-          `INSERT OR IGNORE INTO developer_picks (user_id, title) VALUES (?, ?)`,
-          [user.id, "PrimeArchitect"],
-          (err) => {
-            if (err) console.error(`[${new Date().toISOString()}] Error adding to developer_picks:`, err);
-            else console.log(`[${new Date().toISOString()}] Added ${user.username} as PrimeArchitect to developer_picks`);
-          }
-        );
-      }
-    }
-  );
-
-  // ===== Initial Showdown Tournament =====
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   nextMonth.setDate(1);
-  db.run(
-    "INSERT OR IGNORE INTO showdown_tournaments (season, status, start_date) VALUES (?, ?, ?)",
-    [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]],
-    (err) => {
-      if (err) console.error(`[${new Date().toISOString()}] Error initializing showdown tournament:`, err);
-    }
+  
+  await query(
+    `INSERT INTO showdown_tournaments (season, status, start_date) 
+     VALUES ($1, $2, $3)
+     ON CONFLICT DO NOTHING`,
+    [`Season ${nextMonth.getFullYear()}-${nextMonth.getMonth() + 1}`, "open", nextMonth.toISOString().split("T")[0]]
   );
-});
 
-// Close database and backup on process exit
+  console.log(`[${new Date().toISOString()}] PostgreSQL database initialized successfully.`);
+}
+
 process.on("SIGINT", async () => {
-  await backupDatabase();
-  db.close((err) => {
-    if (err) {
-      console.error(`[${new Date().toISOString()}] Error closing database:`, err.message);
-    }
-    console.log(`[${new Date().toISOString()}] Database connection closed.`);
-    process.exit(0);
-  });
+  await pool.end();
+  console.log(`[${new Date().toISOString()}] Database pool closed.`);
+  process.exit(0);
 });

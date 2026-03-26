@@ -1,13 +1,17 @@
-import { db } from "./database";
+import { query } from "./database";
 
-export function cleanupPosts() {
-    db.run(`
-        DELETE FROM posts 
-        WHERE mode = 'undercover' 
-        AND likes < 50 
-        AND created_at < DATETIME('now', '-1 day')
-    `);
+export async function cleanupPosts() {
+    try {
+        await query(`
+            DELETE FROM posts 
+            WHERE mode = 'undercover' 
+            AND likes < 50 
+            AND created_at < NOW() - INTERVAL '1 day'
+        `);
+        console.log(`[${new Date().toISOString()}] Cleanup completed: removed expired undercover posts`);
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] Cleanup error:`, err);
+    }
 }
 
-// Run cleanup every hour
 setInterval(cleanupPosts, 60 * 60 * 1000);

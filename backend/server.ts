@@ -4,31 +4,35 @@ import path from "path";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import express, { Request, Response, NextFunction } from "express";
-import { db, dbGet } from "./database";
+import { db, query, queryOne } from "./database";
 import http from "http";
 import { Server } from "socket.io";
-import { backupDatabase, localBackup } from "./backup";
 import { authenticateToken } from "./middleware/auth";
 import { metricsMiddleware, default as metricsRouter } from "./routes/metrics";
-
-// Route imports
-import authRoutes from "./routes/auth";
-import postRoutes from "./routes/posts";
-import usersRouter from "./routes/users";
-import dmRoutes from "./routes/dms";
-import settingsRouter from "./routes/settings";
-import rantRoutes from "./routes/rants";
-import squadRoutes from "./routes/squads";
-import tournamentRoutes from "./routes/tournaments";
-import shopRoutes from "./routes/shop";
-import showdownRoutes from "./routes/showdown";
-import battleRoutes from "./routes/battles";
+import { initializeDatabase } from "./database";
 
 dotenv.config();
 
 const app = express();
 
-// ============= SECURITY HEADERS =============
+const isAdmin = (email: string): boolean => {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail) {
+        console.error("[SECURITY ERROR] ADMIN_EMAIL environment variable is required!");
+        return false;
+    }
+    return email === adminEmail;
+};
+
+const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "info" : "debug");
+const LOG_LEVELS: Record<string, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+
+const log = (level: string, message: string, ...args: unknown[]) => {
+    if ((LOG_LEVELS[level] || 0) <= (LOG_LEVELS[LOG_LEVEL] || 0)) {
+        console.log(`[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}`, ...args);
+    }
+};
+
 app.use(
     helmet({
         contentSecurityPolicy: {
@@ -48,7 +52,6 @@ app.use(
     })
 );
 
-// ============= CORS CONFIGURATION =============
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(",") || [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -70,7 +73,6 @@ app.use(
     })
 );
 
-// ============= RATE LIMITING =============
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -89,11 +91,9 @@ const apiLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 
-// ============= BODY PARSING =============
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ============= SECURITY: REQUIRE SECRET KEY =============
 const SECRET_KEY = process.env.SECRET_KEY;
 
 if (!SECRET_KEY) {
@@ -106,21 +106,6 @@ if (SECRET_KEY === "teenverse_secret" || SECRET_KEY.length < 32) {
     console.warn("[SECURITY WARNING] SECRET_KEY appears weak. Use a 64+ char hex string.");
 }
 
-const isAdmin = (email: string): boolean => {
-    return email === (process.env.ADMIN_EMAIL || "restorationmichael3@gmail.com");
-};
-
-// ============= LOGGING =============
-const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === "production" ? "info" : "debug");
-const LOG_LEVELS: Record<string, number> = { error: 0, warn: 1, info: 2, debug: 3 };
-
-const log = (level: string, message: string, ...args: unknown[]) => {
-    if ((LOG_LEVELS[level] || 0) <= (LOG_LEVELS[LOG_LEVEL] || 0)) {
-        console.log(`[${new Date().toISOString()}] [${level.toUpperCase()}] ${message}`, ...args);
-    }
-};
-
-// ============= REQUEST LOGGING =============
 app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on("finish", () => {
@@ -130,56 +115,50 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     next();
 });
 
-// ============= HEALTH CHECKS =============
-app.get("/health", (req: Request, res: Response) => {
+app.get("/health", async (req: Request, res: Response) => {
     const memUsage = process.memoryUsage();
-    const health = {
-        status: "ok" as "ok" | "degraded" | "unhealthy",
-        timestamp: Date.now(),
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV || "development",
-        version: "1.0.0",
-        services: {
-            database: "connected" as "connected" | "error",
-            memory: {
-                usedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
-                totalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+    try {
+        await query("SELECT 1");
+        res.json({
+            status: "ok",
+            timestamp: Date.now(),
+            uptime: process.uptime(),
+            environment: process.env.NODE_ENV || "development",
+            version: "1.0.0",
+            services: {
+                database: "connected",
+                memory: {
+                    usedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+                    totalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+                },
             },
-        },
-    };
-
-    db.get("SELECT 1", [], (err: Error | null) => {
-        if (err) {
-            health.services.database = "error";
-            health.status = "degraded";
-            return res.status(503).json(health);
-        }
-        res.json(health);
-    });
+        });
+    } catch (err) {
+        res.status(503).json({
+            status: "unhealthy",
+            timestamp: Date.now(),
+            uptime: process.uptime(),
+            services: { database: "error" },
+        });
+    }
 });
 
-app.get("/ready", (req: Request, res: Response) => {
-    db.get("SELECT 1", [], (err: Error | null) => {
-        if (err) {
-            return res.status(503).json({ ready: false, error: "Database not ready" });
-        }
+app.get("/ready", async (req: Request, res: Response) => {
+    try {
+        await query("SELECT 1");
         res.json({ ready: true });
-    });
+    } catch (err) {
+        res.status(503).json({ ready: false, error: "Database not ready" });
+    }
 });
 
-// ============= DEBUG ENDPOINTS (DEVELOPMENT ONLY) =============
 if (process.env.NODE_ENV !== "production") {
     app.get("/debug-users", authenticateToken, async (req: Request, res: Response) => {
         if (!isAdmin(req.user?.email || "")) {
             return res.status(403).json({ message: "Admin access required" });
         }
         try {
-            const schema = await new Promise((resolve, reject) => {
-                db.all("PRAGMA table_info(users)", (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                });
-            });
+            const schema = await query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users'");
             log("debug", "Database schema:", schema);
             res.send("Debug info logged");
         } catch (err: any) {
@@ -192,51 +171,14 @@ if (process.env.NODE_ENV !== "production") {
             return res.status(403).json({ message: "Admin access required" });
         }
         try {
-            await new Promise<void>((resolve, reject) => {
-                db.run("DELETE FROM users", (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
+            await query("DELETE FROM users");
             res.send("Users table cleared");
         } catch (err: any) {
             res.status(500).send("Error clearing users");
         }
     });
-
-    app.get("/trigger-backup", authenticateToken, async (req: Request, res: Response) => {
-        if (!isAdmin(req.user?.email || "")) {
-            return res.status(403).json({ message: "Admin access required" });
-        }
-        try {
-            await backupDatabase();
-            res.send("Backup triggered successfully");
-        } catch (err: any) {
-            res.status(500).send("Backup failed");
-        }
-    });
 }
 
-// ============= TRIGGER BACKUP ENDPOINT (PUBLIC WITH RATE LIMIT) =============
-app.get("/trigger-backup", async (req: Request, res: Response) => {
-    try {
-        try {
-            await backupDatabase();
-            log("info", "Backup successful");
-        } catch (b2Err: any) {
-            log("error", "Backblaze B2 backup failed:", b2Err.message);
-            log("info", "Falling back to local backup...");
-            await localBackup();
-            log("info", "Local backup successful");
-        }
-        res.send("Backup triggered successfully");
-    } catch (err: any) {
-        log("error", "Backup failed:", err.message);
-        res.status(500).send("Backup failed");
-    }
-});
-
-// ============= CREATE HTTP SERVER & SOCKET.IO =============
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -248,20 +190,27 @@ const io = new Server(server, {
     pingInterval: 25000,
 });
 
-// ============= ROUTE MOUNTING =============
-
-// Metrics
 app.use(metricsMiddleware);
 app.use("/", metricsRouter);
 
-// Auth routes (register, login, me) - login specifically rate-limited
 app.use("/api/login", loginLimiter);
-app.use("/api", authRoutes);
 
-// Routes with authentication middleware
+const authRoutes = require("./routes/auth").default;
+const postRoutes = require("./routes/posts").default;
+const usersRouter = require("./routes/users").default;
+const dmRoutes = require("./routes/dms").default;
+const settingsRouter = require("./routes/settings").default;
+const rantRoutes = require("./routes/rants").default;
+const squadRoutes = require("./routes/squads").default;
+const tournamentRoutes = require("./routes/tournaments").default;
+const shopRoutes = require("./routes/shop").default;
+const showdownRoutes = require("./routes/showdown").default;
+const battleRoutes = require("./routes/battles").default;
+
+app.use("/api", authRoutes);
 app.use("/api/posts", authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
-app.use("/api/dms", authenticateToken, dmRoutes({ db, SECRET_KEY }));
+app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY }));
 app.use("/api/settings", authenticateToken, settingsRouter);
 app.use("/api", authenticateToken, rantRoutes);
 app.use("/api", authenticateToken, battleRoutes);
@@ -269,11 +218,9 @@ app.use("/api", authenticateToken, squadRoutes);
 app.use("/api", authenticateToken, tournamentRoutes);
 app.use("/api/shop", authenticateToken, shopRoutes);
 
-// Showdown routes need io instance
 const showdownRouter = showdownRoutes(io);
 app.use("/api", authenticateToken, showdownRouter);
 
-// ============= SOCKET.IO SETUP =============
 io.on("connection", (socket) => {
     log("info", `Socket connected: ${socket.id}`);
 
@@ -290,26 +237,13 @@ io.on("connection", (socket) => {
     socket.on("vote_battle", async (data) => {
         const { battleId, voteFor } = data;
         try {
-            const battle = await dbGet("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId]);
-            if (!battle) return;
-
             if (voteFor === "creator") {
-                await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE hype_battles SET votes = votes + 1 WHERE id = ?", [battleId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
+                await query("UPDATE hype_battles SET votes = votes + 1 WHERE id = $1", [battleId]);
             } else {
-                await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
+                await query("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = $1", [battleId]);
             }
 
-            const updatedBattle = await dbGet("SELECT votes, opponent_votes FROM hype_battles WHERE id = ?", [battleId]);
+            const updatedBattle = await queryOne("SELECT votes, opponent_votes FROM hype_battles WHERE id = $1", [battleId]);
             io.to(`battle-${battleId}`).emit("vote_update", updatedBattle);
         } catch (err) {
             log("error", "Vote broadcast error:", err);
@@ -321,15 +255,12 @@ io.on("connection", (socket) => {
     });
 });
 
-// ============= SERVE STATIC FILES =============
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
-// SPA fallback
 app.get("*", (req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
 });
 
-// ============= ERROR HANDLING =============
 class AppError extends Error {
     statusCode: number;
     code: string;
@@ -350,15 +281,10 @@ app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
         res.status(400).json({ message: "File too large", code: "FILE_TOO_LARGE" });
         return;
     }
-    if (err.message && err.message.includes("Only")) {
-        res.status(400).json({ message: err.message, code: "INVALID_FILE_TYPE" });
-        return;
-    }
     log("error", `Unhandled error at ${req.method} ${req.path}:`, err.message, err.stack);
     res.status(500).json({ message: "Internal server error", code: "INTERNAL_ERROR" });
 });
 
-// ============= GLOBAL ERROR HANDLERS =============
 process.on("uncaughtException", (err) => {
     log("error", "Uncaught Exception:", err);
 });
@@ -367,10 +293,22 @@ process.on("unhandledRejection", (reason) => {
     log("error", "Unhandled Rejection:", reason);
 });
 
-// ============= START SERVER =============
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    log("info", `Server running on port ${PORT}`);
-});
+
+async function startServer() {
+    try {
+        await initializeDatabase();
+        log("info", "Database initialized successfully");
+        
+        server.listen(PORT, () => {
+            log("info", `Server running on port ${PORT}`);
+        });
+    } catch (err) {
+        log("error", "Failed to initialize database:", err);
+        process.exit(1);
+    }
+}
+
+startServer();
 
 export default app;
