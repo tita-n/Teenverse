@@ -81,6 +81,8 @@ export async function dbRun(sql: string, params: any[] = []): Promise<{ lastID: 
 export async function initializeDatabase(): Promise<void> {
   console.log(`[${new Date().toISOString()}] Initializing PostgreSQL database...`);
 
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user'`);
+
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
