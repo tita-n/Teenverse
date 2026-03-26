@@ -65,10 +65,15 @@ router.post("/register", async (req, res, next) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 12);
+        console.log("Register debug - email:", email);
+        console.log("Register debug - username:", sanitizedUsername);
+        
         await dbRun(
             "INSERT INTO users (email, username, password, dob, verified, role) VALUES (?, ?, ?, ?, ?, ?)",
             [email, sanitizedUsername, hashedPassword, dob, 0, "user"]
         );
+        
+        console.log("Register debug - inserted successfully");
 
         res.json({ message: "Registered successfully!" });
     } catch (err) {
