@@ -228,6 +228,13 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
         if (!post) return res.status(404).json({ message: "Post not found" });
 
         let reactions: { [key: string]: string[] } = typeof post.reactions === 'string' ? JSON.parse(post.reactions) : (post.reactions || {});
+        
+        // Remove user's existing reaction if any
+        for (const rxn of Object.keys(reactions)) {
+            reactions[rxn] = reactions[rxn].filter((u: string) => u !== user.username);
+        }
+        
+        // Add new reaction
         reactions[reaction] = reactions[reaction] || [];
         if (!reactions[reaction].includes(user.username)) {
             reactions[reaction].push(user.username);
