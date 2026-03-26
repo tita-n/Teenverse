@@ -56,16 +56,21 @@ export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+function convertPlaceholder(sql: string): string {
+  let counter = 0;
+  return sql.replace(/\?/g, () => `$${++counter}`);
+}
+
 export async function dbGet<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
-  return queryOne<T>(sql, params);
+  return queryOne<T>(convertPlaceholder(sql), params);
 }
 
 export async function dbAll<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-  return query<T>(sql, params);
+  return query<T>(convertPlaceholder(sql), params);
 }
 
 export async function dbRun(sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> {
-  const result = await execute(sql, params);
+  const result = await execute(convertPlaceholder(sql), params);
   const idResult = await queryOne<{ id: number }>("SELECT LASTVAL() as id");
   return {
     lastID: idResult?.id || 0,

@@ -14,6 +14,7 @@ import { initializeDatabase } from "./database";
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", 1);
 
 const isAdmin = (email: string): boolean => {
     const adminEmail = process.env.ADMIN_EMAIL;
