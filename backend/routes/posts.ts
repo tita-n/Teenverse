@@ -23,6 +23,8 @@ router.get("/", async (req: express.Request, res: express.Response) => {
         const limit = parseInt(req.query.limit as string) || 10;
         const offset = parseInt(req.query.offset as string) || 0;
 
+        console.log("DEBUG /api/posts called - limit:", limit, "offset:", offset, "auth user:", req.user?.email);
+
         const posts = await dbAll(
             `SELECT p.*, u.username as actual_username, u.verified, u.profile_media_url, u.profile_media_type
              FROM posts p
@@ -32,6 +34,7 @@ router.get("/", async (req: express.Request, res: express.Response) => {
              LIMIT ? OFFSET ?`,
             [limit, offset]
         );
+        console.log("DEBUG /api/posts returned:", posts.length, "posts");
         res.json(posts);
     } catch (err) {
         console.error("Get posts error:", err);
