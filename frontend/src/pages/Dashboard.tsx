@@ -79,10 +79,12 @@ export default function Dashboard() {
       setLoading(true);
       const auth = withAuth(token);
       const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, auth);
+      console.log("FRONTEND DEBUG - posts response:", res.data);
       const postsData = res.data.map((p: Post) => ({
         ...p,
         reactions: p.reactions ? JSON.parse(p.reactions as any) : {},
       }));
+      console.log("FRONTEND DEBUG - mapped posts:", postsData);
       setPosts((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         return [...prev, ...postsData.filter((p: Post) => !ids.has(p.id))];
