@@ -81,7 +81,7 @@ export default function NewsFeed() {
       const res = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=${offset}`, auth);
       const postsData = res.data.map((p: Post) => ({
         ...p,
-        reactions: p.reactions ? JSON.parse(p.reactions as any) : {},
+        reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}),
       }));
       setPosts((prev) => {
         const ids = new Set(prev.map((p) => p.id));
@@ -117,7 +117,7 @@ export default function NewsFeed() {
       await axios.post("/api/posts/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
       setContent("");
       const res = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, withAuth(token));
-      const fresh = res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} }));
+      const fresh = res.data.map((p: Post) => ({ ...p, reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}) }));
       setPosts(fresh);
       setOffset(0);
       setHasMore(fresh.length === limit);
@@ -146,7 +146,7 @@ export default function NewsFeed() {
     try {
       await axios.post("/api/posts/react", { email: user.email, postId, reaction }, withAuth(token));
       const res = await axios.get(`/api/posts/newsfeed?limit=${posts.length}&offset=0`, withAuth(token));
-      setPosts(res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} })));
+      setPosts(res.data.map((p: Post) => ({ ...p, reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}) })));
     } catch (err) { console.error("Error reacting:", err); }
   };
 

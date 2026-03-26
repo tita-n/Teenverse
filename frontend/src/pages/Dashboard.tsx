@@ -79,12 +79,10 @@ export default function Dashboard() {
       setLoading(true);
       const auth = withAuth(token);
       const res = await axios.get(`/api/posts?limit=${limit}&offset=${offset}`, auth);
-      console.log("FRONTEND DEBUG - posts response:", res.data);
       const postsData = res.data.map((p: Post) => ({
         ...p,
-        reactions: p.reactions ? JSON.parse(p.reactions as any) : {},
+        reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}),
       }));
-      console.log("FRONTEND DEBUG - mapped posts:", postsData);
       setPosts((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         return [...prev, ...postsData.filter((p: Post) => !ids.has(p.id))];
@@ -122,7 +120,7 @@ export default function Dashboard() {
       await axios.post("/api/posts/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
       setContent("");
       const res = await axios.get(`/api/posts?limit=${limit}&offset=0`, withAuth(token));
-      const fresh = res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} }));
+      const fresh = res.data.map((p: Post) => ({ ...p, reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}) }));
       setPosts(fresh);
       setOffset(0);
       setHasMore(fresh.length === limit);
@@ -151,7 +149,7 @@ export default function Dashboard() {
     try {
       await axios.post("/api/posts/react", { email: user.email, postId, reaction }, withAuth(token));
       const res = await axios.get(`/api/posts?limit=${posts.length}&offset=0`, withAuth(token));
-      setPosts(res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} })));
+      setPosts(res.data.map((p: Post) => ({ ...p, reactions: typeof p.reactions === 'string' ? JSON.parse(p.reactions) : (p.reactions || {}) })));
     } catch (err) { console.error("Error reacting:", err); }
   };
 
