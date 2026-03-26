@@ -341,4 +341,23 @@ router.post("/coin-flip", async (req: express.Request, res: express.Response) =>
     }
 });
 
+// Hall of Fame - top users by different metrics
+router.get("/hall-of-fame", async (req: express.Request, res: express.Response) => {
+    try {
+        const topXP = await dbAll(
+            "SELECT id, username, xp, verified, profile_media_url FROM users ORDER BY xp DESC LIMIT 20"
+        );
+        const topCoins = await dbAll(
+            "SELECT id, username, coins, verified, profile_media_url FROM users ORDER BY coins DESC LIMIT 20"
+        );
+        const topWins = await dbAll(
+            "SELECT id, username, wins, verified, profile_media_url FROM users ORDER BY wins DESC LIMIT 20"
+        );
+        res.json({ topXP, topCoins, topWins });
+    } catch (err) {
+        console.error("Hall of Fame error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
 export default router;
