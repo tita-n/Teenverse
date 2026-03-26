@@ -1,8 +1,17 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { dbGet, dbRun } from "../database";
 import { generateToken } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { message: "Too many login attempts, please try again after 15 minutes" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 const router = express.Router();
 
@@ -78,8 +87,8 @@ router.post("/register", async (req, res, next) => {
     }
 });
 
-// Login
-router.post("/login", async (req, res, next) => {
+// Login with rate limiting
+router.post("/login", loginLimiter, async (req, res, next) => {
     try {
         const { email, password } = req.body;
 

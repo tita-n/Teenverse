@@ -76,21 +76,11 @@ app.use(
 
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 20,
     message: { message: "Too many login attempts, please try again after 15 minutes" },
     standardHeaders: true,
     legacyHeaders: false,
 });
-
-const apiLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 100,
-    message: { message: "Too many requests, please slow down" },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
-app.use("/api", apiLimiter);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -206,7 +196,8 @@ const shopRoutes = require("./routes/shop").default;
 const showdownRoutes = require("./routes/showdown").default;
 const battleRoutes = require("./routes/battles").default;
 
-app.use("/api", loginLimiter, authRoutes);
+// Mount auth without rate limiting globally - rate limit applied in auth.ts for login ONLY
+app.use("/api", authRoutes);
 app.use("/api/posts", authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
 app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY }));
