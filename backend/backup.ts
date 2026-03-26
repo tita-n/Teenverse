@@ -76,14 +76,14 @@ export async function backupDatabase() {
       const checksum = crypto.createHash("sha256").update(fileData).digest("hex");
       console.log(`[${new Date().toISOString()}] Backup checksum: ${checksum}`);
       // Get bucket info
-      const bucketResponse = await b2.getBucket({ bucketName: b2BucketName });
+      const bucketResponse = await b2!.getBucket({ bucketName: b2BucketName });
       const bucketId = bucketResponse.data.buckets[0].bucketId;
       // Upload file
-      const uploadUrlResponse = await b2.getUploadUrl({ bucketId });
+      const uploadUrlResponse = await b2!.getUploadUrl({ bucketId });
       const uploadUrl = uploadUrlResponse.data.uploadUrl;
       const uploadAuthToken = uploadUrlResponse.data.authorizationToken;
       const fileName = `users.db`;
-      await b2.uploadFile({
+      await b2!.uploadFile({
         uploadUrl,
         uploadAuthToken,
         fileName,
@@ -115,10 +115,10 @@ export async function restoreDatabase() {
     try {
       console.log(`[${new Date().toISOString()}] Starting B2 restore...`);
       // Get bucket info
-      const bucketResponse = await b2.getBucket({ bucketName: b2BucketName });
+      const bucketResponse = await b2!.getBucket({ bucketName: b2BucketName });
       const bucketId = bucketResponse.data.buckets[0].bucketId;
       // List files to find users.db
-      const fileListResponse = await b2.listFileNames({
+      const fileListResponse = await b2!.listFileNames({
         bucketId,
         startFileName: "users.db",
         maxFileCount: 1,
@@ -131,7 +131,7 @@ export async function restoreDatabase() {
         return;
       }
       // Download file
-      const downloadResponse = await b2.downloadFileByName({
+      const downloadResponse = await b2!.downloadFileByName({
         bucketName: b2BucketName,
         fileName: "users.db",
         responseType: "arraybuffer",

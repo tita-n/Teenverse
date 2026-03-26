@@ -1,12 +1,11 @@
-import { User } from "../types";
-
 declare global {
     namespace Express {
         interface Request {
-            user?: {
+            user: {
                 id: number;
                 email: string;
                 verified: number;
+                role?: string;
                 username?: string;
                 coins?: number;
                 xp?: number;

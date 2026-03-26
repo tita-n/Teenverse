@@ -1,36 +1,57 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
-import Register from "./Register";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import RantZone from "./pages/RantZone";
-import GameSquad from "./pages/GameSquad";
-import SquadDetails from "./pages/SquadDetails";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import Profile from "./pages/Profile";
-import ControlPanel from "./pages/ControlPanel";
-import NewsFeed from "./pages/NewsFeed";
-import BuyCoins from "./pages/BuyCoins";
-import HypeBattles from "./pages/HypeBattles";
-import CloutMissions from "./pages/CloutMissions";
-import HallOfFame from "./pages/HallOfFame";
-import Shop from "./pages/Shop";
-import Titan from "./pages/Titan";
-import CreatePost from "./pages/CreatePost";
-import Analytics from "./pages/Analytics";
-import UltimateShowdown from "./pages/UltimateShowdown";
-import ChatList from "./pages/ChatList";
-import ChatDetail from "./pages/ChatDetail";
-import Settings from "./pages/Settings";
+import { lazy, Suspense } from "react";
 import { AuthProvider } from "./hooks/useAuth";
-import { SocketProvider } from "./context/SocketContext";
+
+const Register = lazy(() => import("./Register"));
+const Login = lazy(() => import("./pages/Login"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const RantZone = lazy(() => import("./pages/RantZone"));
+const GameSquad = lazy(() => import("./pages/GameSquad"));
+const SquadDetails = lazy(() => import("./pages/SquadDetails"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const Profile = lazy(() => import("./pages/Profile"));
+const ControlPanel = lazy(() => import("./pages/ControlPanel"));
+const NewsFeed = lazy(() => import("./pages/NewsFeed"));
+const BuyCoins = lazy(() => import("./pages/BuyCoins"));
+const HypeBattles = lazy(() => import("./pages/HypeBattles"));
+const CloutMissions = lazy(() => import("./pages/CloutMissions"));
+const HallOfFame = lazy(() => import("./pages/HallOfFame"));
+const Shop = lazy(() => import("./pages/Shop"));
+const Titan = lazy(() => import("./pages/Titan"));
+const CreatePost = lazy(() => import("./pages/CreatePost"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const UltimateShowdown = lazy(() => import("./pages/UltimateShowdown"));
+const ChatList = lazy(() => import("./pages/ChatList"));
+const ChatDetail = lazy(() => import("./pages/ChatDetail"));
+const Settings = lazy(() => import("./pages/Settings"));
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-600" />
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface">
+      <div className="text-center">
+        <h1 className="text-6xl font-bold text-brand-600 mb-4">404</h1>
+        <p className="text-xl text-tx-secondary mb-6">Page not found</p>
+        <a href="/" className="btn-primary">Go Home</a>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <AuthProvider>
-      <SocketProvider>
-        <HelmetProvider>
-          <Router>
+      <HelmetProvider>
+        <Router>
+          <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -56,21 +77,9 @@ export default function App() {
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
-          </Router>
-        </HelmetProvider>
-      </SocketProvider>
+          </Suspense>
+        </Router>
+      </HelmetProvider>
     </AuthProvider>
-  );
-}
-
-function NotFound() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-surface">
-      <div className="text-center">
-        <h1 className="text-6xl font-bold text-brand-600 mb-4">404</h1>
-        <p className="text-xl text-tx-secondary mb-6">Page not found</p>
-        <a href="/" className="btn-primary">Go Home</a>
-      </div>
-    </div>
   );
 }

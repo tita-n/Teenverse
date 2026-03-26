@@ -1,15 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { dbGet } from "../db";
-import { db } from "../database";
-import { AppError } from "./errorHandler";
-import { JwtPayload } from "../types";
+
+const SECRET_KEY = process.env.SECRET_KEY;
+if (!SECRET_KEY) {
+    throw new Error("SECRET_KEY environment variable is required");
+}
 
 declare global {
     namespace Express {
         interface Request {
             user: {
-                id: number;
+                id?: number;
                 email: string;
                 verified: number;
                 role: string;
@@ -18,21 +19,16 @@ declare global {
     }
 }
 
-const SECRET_KEY = process.env.SECRET_KEY;
-if (!SECRET_KEY) {
-    throw new Error("SECRET_KEY environment variable is required");
-}
-
 export async function authenticateToken(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers["authorization"];
     const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
-        return next(new AppError("Authentication token required", 401, "NO_TOKEN"));
+        return res.status(401).json({ message: "Authentication token required" });
     }
 
     try {
-        const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload;
+        const decoded = jwt.verify(token, SECRET_KEY!) as Record<string, any>;
 
         // Attach user info from JWT directly
         req.user = {
@@ -45,19 +41,19 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
         next();
     } catch (err: any) {
         if (err.name === "TokenExpiredError") {
-            return next(new AppError("Token expired", 401, "TOKEN_EXPIRED"));
+            return res.status(401).json({ message: "Token expired" });
         }
-        return next(new AppError("Invalid or expired token", 401, "INVALID_TOKEN"));
+        return res.status(403).json({ message: "Invalid or expired token" });
     }
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    if (req.user.role !== "admin") {
-        return next(new AppError("Admin access required", 403, "NOT_ADMIN"));
+    if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
     }
     next();
 }
 
-export function generateToken(payload: JwtPayload): string {
-    return jwt.sign(payload, SECRET_KEY as string, { expiresIn: "24h" });
+export function generateToken(payload: { id: number; email: string; verified: number; role: string }): string {
+    return jwt.sign(payload, SECRET_KEY!, { expiresIn: "24h" });
 }

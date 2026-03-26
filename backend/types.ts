@@ -1,5 +1,3 @@
-import { Database } from "sqlite3";
-
 // ============ Core Domain Types ============
 
 export interface User {
