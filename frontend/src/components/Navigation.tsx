@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu, X, LogOut, User, Zap, Trophy, MessageCircle, Coins,
   ShoppingBag, LayoutDashboard, Newspaper, Flame, Users, Settings,
@@ -32,15 +31,15 @@ export default function Navigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     logout();
     navigate("/");
     setIsOpen(false);
-  };
+  }, [logout, navigate]);
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = useCallback((path: string) => location.pathname === path, [location.pathname]);
 
-  const renderNavLink = (link: { to: string; label: string; icon: any; dynamic?: boolean }, isMobile = false) => {
+  const renderNavLink = useCallback((link: { to: string; label: string; icon: any; dynamic?: boolean }, isMobile = false) => {
     const href = link.dynamic && user?.username ? `${link.to}/${user.username}` : link.to;
     const Icon = link.icon;
     const active = isActive(href) || (link.dynamic && location.pathname.startsWith(link.to));
@@ -50,7 +49,7 @@ export default function Navigation() {
         key={link.to}
         to={href}
         onClick={() => isMobile && setIsOpen(false)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${
           active
             ? "bg-white/20 text-white"
             : "text-white/80 hover:text-white hover:bg-white/10"
@@ -60,28 +59,25 @@ export default function Navigation() {
         {link.label}
       </Link>
     );
-  };
+  }, [user, isActive, location.pathname]);
 
   return (
     <nav className="bg-gradient-to-r from-brand-600 to-brand-700 shadow-lg sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center group-hover:bg-white/30 transition-colors">
+          <Link to="/" className="flex items-center gap-2">
+            <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center">
               <Zap className="w-5 h-5 text-white" />
             </div>
             <span className="text-white font-bold text-xl tracking-tight">TeenVerse</span>
           </Link>
 
-          {/* Desktop Nav */}
           {user && (
             <div className="hidden lg:flex items-center gap-1">
               {navLinks.map((link) => renderNavLink(link))}
             </div>
           )}
 
-          {/* Desktop Right */}
           <div className="hidden md:flex items-center gap-3">
             {user ? (
               <>
@@ -97,7 +93,7 @@ export default function Navigation() {
                 {authLinks.filter((l) => !l.dynamic).map((link) => renderNavLink(link))}
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/80 hover:text-white hover:bg-red-500/20 transition-all duration-200 text-sm"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-white/80 hover:text-white hover:bg-red-500/20 transition-colors text-sm"
                 >
                   <LogOut className="w-4 h-4" />
                   Log Out
@@ -105,7 +101,7 @@ export default function Navigation() {
               </>
             ) : (
               <div className="flex items-center gap-2">
-                <Link to="/" className="btn-ghost text-white hover:bg-white/10 btn-sm">
+                <Link to="/" className="px-3 py-2 rounded-lg text-white/80 hover:bg-white/10 transition-colors text-sm">
                   Log In
                 </Link>
                 <Link to="/register" className="bg-white text-brand-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/90 transition-colors">
@@ -115,7 +111,6 @@ export default function Navigation() {
             )}
           </div>
 
-          {/* Mobile Menu Button */}
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="lg:hidden p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
@@ -126,62 +121,55 @@ export default function Navigation() {
         </div>
       </div>
 
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="lg:hidden overflow-hidden bg-brand-700/50 backdrop-blur-sm"
-          >
-            <div className="px-4 py-4 space-y-1">
-              {user ? (
-                <>
-                  <div className="flex items-center gap-3 px-3 py-2 mb-3 bg-white/10 rounded-lg">
-                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white font-semibold">
-                      {(user.username || user.email || "U").charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-white font-medium">{user.username || user.email}</p>
-                      <p className="text-white/60 text-xs">Welcome back!</p>
-                    </div>
-                  </div>
-                  {navLinks.map((link) => renderNavLink(link, true))}
-                  <div className="border-t border-white/10 pt-2 mt-2">
-                    {authLinks.map((link) => renderNavLink(link, true))}
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors text-sm mt-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Log Out
-                  </button>
-                </>
-              ) : (
-                <div className="space-y-2">
-                  <Link
-                    to="/"
-                    onClick={() => setIsOpen(false)}
-                    className="block w-full text-center px-4 py-3 rounded-lg text-white hover:bg-white/10 transition-colors"
-                  >
-                    Log In
-                  </Link>
-                  <Link
-                    to="/register"
-                    onClick={() => setIsOpen(false)}
-                    className="block w-full text-center px-4 py-3 rounded-lg bg-white text-brand-700 font-medium"
-                  >
-                    Sign Up
-                  </Link>
+      <div
+        className={`lg:hidden overflow-hidden bg-brand-700/50 backdrop-blur-sm transition-all duration-200 ease-in-out ${
+          isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <div className="px-4 py-4 space-y-1">
+          {user ? (
+            <>
+              <div className="flex items-center gap-3 px-3 py-2 mb-3 bg-white/10 rounded-lg">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white font-semibold">
+                  {(user.username || user.email || "U").charAt(0).toUpperCase()}
                 </div>
-              )}
+                <div>
+                  <p className="text-white font-medium">{user.username || user.email}</p>
+                  <p className="text-white/60 text-xs">Welcome back!</p>
+                </div>
+              </div>
+              {navLinks.map((link) => renderNavLink(link, true))}
+              <div className="border-t border-white/10 pt-2 mt-2">
+                {authLinks.map((link) => renderNavLink(link, true))}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-red-300 hover:bg-red-500/20 transition-colors text-sm mt-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Log Out
+              </button>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Link
+                to="/"
+                onClick={() => setIsOpen(false)}
+                className="block w-full text-center px-4 py-3 rounded-lg text-white hover:bg-white/10 transition-colors"
+              >
+                Log In
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setIsOpen(false)}
+                className="block w-full text-center px-4 py-3 rounded-lg bg-white text-brand-700 font-medium"
+              >
+                Sign Up
+              </Link>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </div>
+      </div>
     </nav>
   );
 }

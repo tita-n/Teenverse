@@ -54,7 +54,7 @@ interface Squad {
 }
 
 interface User {
-  id: number;
+  id?: number;
   email: string;
   username?: string;
 }

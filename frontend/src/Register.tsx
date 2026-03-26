@@ -1,8 +1,8 @@
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import Button from "../components/ui/Button";
-import Input from "../components/ui/Input";
+import Button from "./components/ui/Button";
+import Input from "./components/ui/Input";
 import { Zap, Check, X } from "lucide-react";
 
 const passwordRequirements = [

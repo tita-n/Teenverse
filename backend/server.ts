@@ -3434,95 +3434,60 @@ app.post("/api/coin-flip", authenticateToken, async (req, res) => {
 app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
     try {
         // Fetch Ultimate Showdown winners
-        const ultimateShowdownWinners: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.awarded_at DESC LIMIT 10",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
+        const ultimateShowdownWinners = await dbAll(
+            "SELECT h.*, u.username as actual_username FROM hall_of_fame h JOIN users u ON h.user_id = u.id ORDER BY h.awarded_at DESC LIMIT 10"
+        );
 
-        // Fetch Top Rappers/Dancers/Creators (All-Time)
-        const categories = ["Rap Battle", "Dance-off", "Meme Creation", "Artistic Speed Drawing", "Beat-making Face-off"];
+        // Fetch Top Rappers/Dancers/Creators (All-Time) - single query for all categories
+        const allTimeWinners = await dbAll(
+            `SELECT h.category, u.id, u.username, COUNT(*) as wins
+             FROM hype_battles h
+             JOIN users u ON h.winner_id = u.id
+             WHERE h.closed = 1
+             GROUP BY h.category, u.id, u.username
+             ORDER BY h.category, wins DESC`
+        );
+
+        // Group and limit to top 5 per category
         const topCreatorsAllTime: { [key: string]: any[] } = {};
-        for (const category of categories) {
-            const winners = await new Promise<any[]>((resolve, reject) => {
-                db.all(
-                    `SELECT u.id, u.username, COUNT(*) as wins
-                     FROM hype_battles h
-                     JOIN users u ON h.winner_id = u.id
-                     WHERE h.category = ? AND h.closed = 1
-                     GROUP BY u.id, u.username
-                     ORDER BY wins DESC LIMIT 5`,
-                    [category],
-                    (err, rows) => {
-                        if (err) reject(err);
-                        resolve(rows);
-                    }
-                );
-            });
-            topCreatorsAllTime[category] = winners;
+        for (const row of allTimeWinners) {
+            if (!topCreatorsAllTime[row.category]) topCreatorsAllTime[row.category] = [];
+            if (topCreatorsAllTime[row.category].length < 5) {
+                topCreatorsAllTime[row.category].push(row);
+            }
         }
 
-        // Fetch Top Rappers/Dancers/Creators (Monthly)
+        // Fetch Top Rappers/Dancers/Creators (Monthly) - single query for all categories
+        const monthlyWinners = await dbAll(
+            `SELECT h.category, u.id, u.username, COUNT(*) as wins
+             FROM hype_battles h
+             JOIN users u ON h.winner_id = u.id
+             WHERE h.closed = 1
+             AND h.created_at >= datetime('now', '-30 days')
+             GROUP BY h.category, u.id, u.username
+             ORDER BY h.category, wins DESC`
+        );
+
         const topCreatorsMonthly: { [key: string]: any[] } = {};
-        for (const category of categories) {
-            const winners = await new Promise<any[]>((resolve, reject) => {
-                db.all(
-                    `SELECT u.id, u.username, COUNT(*) as wins
-                     FROM hype_battles h
-                     JOIN users u ON h.winner_id = u.id
-                     WHERE h.category = ? AND h.closed = 1
-                     AND h.created_at >= datetime('now', '-30 days')
-                     GROUP BY u.id, u.username
-                     ORDER BY wins DESC LIMIT 5`,
-                    [category],
-                    (err, rows) => {
-                        if (err) reject(err);
-                        resolve(rows);
-                    }
-                );
-            });
-            topCreatorsMonthly[category] = winners;
+        for (const row of monthlyWinners) {
+            if (!topCreatorsMonthly[row.category]) topCreatorsMonthly[row.category] = [];
+            if (topCreatorsMonthly[row.category].length < 5) {
+                topCreatorsMonthly[row.category].push(row);
+            }
         }
 
-        // Fetch Top Squads
-        const topSquads: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT g.*, u.username as creator_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.wins DESC LIMIT 5",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
-
-        // Fetch Top Earners
-        const topEarners: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 5",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
-
-        // Fetch Developer Picks
-        const developerPicks: any[] = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT d.*, u.username as actual_username FROM developer_picks d JOIN users u ON d.user_id = u.id ORDER BY d.awarded_at DESC",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
+        // Fetch Top Squads, Top Earners, Developer Picks in parallel
+        const [topSquads, topEarners, developerPicks] = await Promise.all([
+            dbAll(
+                "SELECT g.*, u.username as creator_username FROM game_squads g JOIN users u ON g.user_id = u.id ORDER BY g.wins DESC LIMIT 5"
+            ),
+            dbAll(
+                "SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 5"
+            ),
+            dbAll(
+                "SELECT d.*, u.username as actual_username FROM developer_picks d JOIN users u ON d.user_id = u.id ORDER BY d.awarded_at DESC"
+            ),
+        ]);
         });
 
         console.log(`[${new Date().toISOString()}] /api/hall-of-fame returned data for all sections`);

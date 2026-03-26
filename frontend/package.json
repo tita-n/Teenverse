@@ -1,0 +1,47 @@
+{
+  "name": "teenverse-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for TeenVerse social platform",
+  "main": "src/index.tsx",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "lint": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "react-helmet-async": "^2.0.5",
+    "axios": "^1.6.0",
+    "socket.io-client": "^4.7.2",
+    "framer-motion": "^11.2.0",
+    "react-chartjs-2": "^5.2.0",
+    "chart.js": "^4.4.0",
+    "lucide-react": "^0.453.0",
+    "react-confetti": "^6.1.0",
+    "react-dropzone": "^14.2.3",
+    "react-toastify": "^10.0.5",
+    "dompurify": "^3.0.6"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.21",
+    "@types/react-dom": "^18.2.7",
+    "@types/react-router-dom": "^5.3.3",
+    "@types/node": "^20.10.5",
+    "@types/axios": "^0.14.0",
+    "@types/dompurify": "^3.0.5",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "@vitejs/plugin-react": "^4.2.1",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5"
+  }
+}
