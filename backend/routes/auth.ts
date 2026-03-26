@@ -88,6 +88,7 @@ router.post("/login", async (req, res, next) => {
 
         const user = await dbGet("SELECT * FROM users WHERE email = ?", [email]);
 
+        console.log("Login debug - email input:", email);
         console.log("Login debug - found user:", !!user);
         console.log("Login debug - stored hash:", user?.password?.substring(0, 20));
         
