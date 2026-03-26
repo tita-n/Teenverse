@@ -341,6 +341,23 @@ router.post("/coin-flip", async (req: express.Request, res: express.Response) =>
     }
 });
 
+// Clout Missions - daily challenges for rewards
+router.get("/clout-missions", async (req: express.Request, res: express.Response) => {
+    try {
+        const missions = [
+            { mission: "Create your first post", reward: "100 coins", progress: 0 },
+            { mission: "Send your first DM", reward: "50 coins", progress: 0 },
+            { mission: "Join a Game Squad", reward: "75 coins", progress: 0 },
+            { mission: "Win your first battle", reward: "200 coins", progress: 0 },
+            { mission: "Create a tournament", reward: "150 coins", progress: 0 },
+        ];
+        res.json(missions);
+    } catch (err) {
+        console.error("Clout missions error:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
 // Hall of Fame - top users by different metrics
 router.get("/hall-of-fame", async (req: express.Request, res: express.Response) => {
     try {

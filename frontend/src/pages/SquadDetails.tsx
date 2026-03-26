@@ -47,13 +47,13 @@ export default function SquadDetails() {
 
   const refreshMessages = () => {
     if (!token || !squadId) return;
-    axios.get(`/api/squad-messages/${squadId}`, withAuth(token)).then((r) => setMessages(r.data)).catch(() => {});
+    axios.get(`/api/game-squads/${squadId}/messages`, withAuth(token)).then((r) => setMessages(r.data)).catch(() => {});
   };
 
   const handleSend = async () => {
     if (!user || !token || !squadId || !newMessage.trim()) return;
     try {
-      await axios.post("/api/squad-messages", { email: user.email, squadId: parseInt(squadId), message: newMessage }, withAuth(token));
+      await axios.post(`/api/game-squads/${squadId}/messages`, { email: user.email, squadId: parseInt(squadId), message: newMessage }, withAuth(token));
       setNewMessage("");
       refreshMessages();
     } catch (err) { console.error("Error:", err); }
@@ -62,7 +62,7 @@ export default function SquadDetails() {
   const handleSchedule = async () => {
     if (!user || !token || !squadId || !matchTime || !matchDescription) return;
     try {
-      await axios.post("/api/squad-messages", { email: user.email, squadId: parseInt(squadId), message: `🎮 Match: ${matchDescription} at ${matchTime}` }, withAuth(token));
+      await axios.post(`/api/game-squads/${squadId}/messages`, { email: user.email, squadId: parseInt(squadId), message: `🎮 Match: ${matchDescription} at ${matchTime}` }, withAuth(token));
       setMatchTime(""); setMatchDescription("");
       refreshMessages();
     } catch (err) { console.error("Error:", err); }
@@ -73,9 +73,9 @@ export default function SquadDetails() {
     const fd = new FormData();
     fd.append("clip", clipFile); fd.append("email", user.email); fd.append("squadId", squadId); fd.append("description", clipDescription);
     try {
-      await axios.post("/api/game-clips", fd, { headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" } });
+      await axios.post(`/api/game-squads/${squadId}/clips`, fd, { headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" } });
       setClipFile(null); setClipDescription(""); if (clipPreview) { URL.revokeObjectURL(clipPreview); setClipPreview(null); }
-      const res = await axios.get(`/api/game-clips/${squadId}`, withAuth(token));
+      const res = await axios.get(`/api/game-squads/${squadId}/clips`, withAuth(token));
       setClips(res.data);
     } catch (err) { console.error("Error:", err); }
   };
