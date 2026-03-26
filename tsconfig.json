@@ -19,5 +19,5 @@
   },
   "include": ["backend/**/*.ts"],
   "exclude": ["node_modules", "frontend"],
-  "types": ["node", "sqlite3"]
+  "types": ["node", "pg"]
 }
