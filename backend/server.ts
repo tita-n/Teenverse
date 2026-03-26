@@ -194,8 +194,6 @@ const io = new Server(server, {
 app.use(metricsMiddleware);
 app.use("/", metricsRouter);
 
-app.use("/api/login", loginLimiter);
-
 const authRoutes = require("./routes/auth").default;
 const postRoutes = require("./routes/posts").default;
 const usersRouter = require("./routes/users").default;
@@ -208,19 +206,19 @@ const shopRoutes = require("./routes/shop").default;
 const showdownRoutes = require("./routes/showdown").default;
 const battleRoutes = require("./routes/battles").default;
 
-app.use("/api", authRoutes);
+app.use("/api", loginLimiter, authRoutes);
 app.use("/api/posts", authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
 app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY }));
 app.use("/api/settings", authenticateToken, settingsRouter);
-app.use("/api", authenticateToken, rantRoutes);
-app.use("/api", authenticateToken, battleRoutes);
-app.use("/api", authenticateToken, squadRoutes);
-app.use("/api", authenticateToken, tournamentRoutes);
+app.use("/api/rants", authenticateToken, rantRoutes);
+app.use("/api/hype-battles", authenticateToken, battleRoutes);
+app.use("/api/game-squads", authenticateToken, squadRoutes);
+app.use("/api/tournaments", authenticateToken, tournamentRoutes);
 app.use("/api/shop", authenticateToken, shopRoutes);
 
 const showdownRouter = showdownRoutes(io);
-app.use("/api", authenticateToken, showdownRouter);
+app.use("/api/showdown", authenticateToken, showdownRouter);
 
 io.on("connection", (socket) => {
     log("info", `Socket connected: ${socket.id}`);

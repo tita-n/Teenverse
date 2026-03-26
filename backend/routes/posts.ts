@@ -32,8 +32,6 @@ router.get("/", async (req: express.Request, res: express.Response) => {
              LIMIT ? OFFSET ?`,
             [limit, offset]
         );
-        console.log("Get posts debug - count:", posts.length);
-        console.log("Get posts debug - first post:", posts[0]);
         res.json(posts);
     } catch (err) {
         console.error("Get posts error:", err);

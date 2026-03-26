@@ -38,7 +38,7 @@ router.get("/profile/:username", async (req: express.Request, res: express.Respo
     const username = req.params.username;
     try {
         const user = await dbGet(
-            "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE username = ?",
+            "SELECT id, username, verified, coins, xp, profile_media_url, profile_media_type FROM users WHERE LOWER(username) = LOWER(?)",
             [username]
         );
         if (!user) return res.status(404).json({ message: "User not found" });
