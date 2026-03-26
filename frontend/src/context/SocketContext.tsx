@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useCallback, useRef, useEffect, useState, ReactNode, useMemo } from "react";
 import { io, Socket } from "socket.io-client";
 
 interface SocketContextType {
@@ -11,29 +11,42 @@ const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
-  const connect = (token: string) => {
+  const connect = useCallback((token: string) => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
     const newSocket = io(import.meta.env.VITE_API_URL || "http://localhost:5000", {
       auth: { token },
+      transports: ["websocket"],
+      reconnectionAttempts: 3,
     });
+    socketRef.current = newSocket;
     setSocket(newSocket);
-  };
+  }, []);
 
-  const disconnect = () => {
-    if (socket) {
-      socket.disconnect();
+  const disconnect = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
       setSocket(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
     return () => {
-      disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
   }, []);
 
+  const value = useMemo(() => ({ socket, connect, disconnect }), [socket, connect, disconnect]);
+
   return (
-    <SocketContext.Provider value={{ socket, connect, disconnect }}>
+    <SocketContext.Provider value={value}>
       {children}
     </SocketContext.Provider>
   );

@@ -12,7 +12,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-animation': ['framer-motion'],
           'vendor-charts': ['chart.js', 'react-chartjs-2'],
         },
       },
@@ -23,8 +22,5 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:5000',
     },
-  },
-  define: {
-    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:5000'),
   },
 });

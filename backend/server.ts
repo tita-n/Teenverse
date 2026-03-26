@@ -1023,71 +1023,37 @@ app.post("/api/like", authenticateToken, async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        const user: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
+        await withTransaction(async () => {
+            const user = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
+            if (!user) throw new Error("User not found");
 
-        if (!user) return res.status(404).json({ message: "User not found" });
+            const existingLike = await dbGet(
+                "SELECT id FROM likes WHERE post_id = ? AND user_id = ?",
+                [postId, user.id]
+            );
+            if (existingLike) throw new Error("ALREADY_LIKED");
 
-        const userId = user.id;
+            await dbRun("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", [postId, user.id]);
+            await dbRun("UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId]);
 
-        const existingLike: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT id FROM likes WHERE post_id = ? AND user_id = ?", [postId, userId], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-
-        if (existingLike) {
-            return res.status(400).json({ message: "Already liked this post" });
-        }
-
-        await new Promise<void>((resolve, reject) => {
-            db.run("INSERT INTO likes (post_id, user_id) VALUES (?, ?)", [postId, userId], (err) => {
-                if (err) reject(err);
-                resolve();
-            });
-        });
-
-        await new Promise<void>((resolve, reject) => {
-            db.run("UPDATE posts SET likes = likes + 1 WHERE id = ?", [postId], (err) => {
-                if (err) reject(err);
-                resolve();
-            });
-        });
-
-        const post: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT likes, mode FROM posts WHERE id = ?", [postId], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-
-        const totalLikes: any = await new Promise<any>((resolve, reject) => {
-            db.get("SELECT SUM(likes) as total FROM posts WHERE user_id = ?", [userId], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-
-        if (totalLikes.total >= 100) {
-            await new Promise<void>((resolve, reject) => {
-                db.run(
+            // Check for News King badge
+            const totalLikes = await dbGet(
+                "SELECT SUM(likes) as total FROM posts WHERE user_id = ?",
+                [user.id]
+            );
+            if (totalLikes?.total >= 100) {
+                await dbRun(
                     "INSERT INTO badges (user_id, news_king) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET news_king = 1",
-                    [userId],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
+                    [user.id]
                 );
-            });
-        }
+            }
+        });
 
         res.json({ message: "Post liked" });
-    } catch (err) {
+    } catch (err: any) {
+        if (err.message === "ALREADY_LIKED") {
+            return res.status(400).json({ message: "Already liked this post" });
+        }
         console.error("Like error:", err);
         res.status(500).json({ message: "Internal server error" });
     }
@@ -2346,122 +2312,75 @@ app.post("/api/vote-battle", authenticateToken, async (req, res) => {
 
 app.get("/api/determine-winners", authenticateToken, async (req, res) => {
     try {
-        const battles = await new Promise<any[]>((resolve, reject) => {
-            db.all(
-                "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < DATETIME('now') AND closed = 0",
-                [],
-                (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                }
-            );
-        });
+        const battles = await dbAll(
+            "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < DATETIME('now') AND closed = 0"
+        );
+
+        const titleMap: { [key: string]: string } = {
+            "Rap Battle": "Rap King",
+            "Dance-off": "Dance Legend",
+            "Meme Creation": "Meme Master",
+            "Artistic Speed Drawing": "Art Ace",
+            "Beat-making Face-off": "Beat Boss",
+        };
 
         for (const battle of battles) {
-            let winnerId = null;
-            let loserId = null;
-            let winnerTeamId = null;
-            let loserTeamId = null;
+            let winnerId: number | null = null;
+            let loserId: number | null = null;
 
             if (battle.votes > battle.opponent_votes) {
                 winnerId = battle.user_id;
                 loserId = battle.opponent_id;
-                winnerTeamId = battle.team_id;
-                loserTeamId = battle.opponent_team_id;
             } else if (battle.opponent_votes > battle.votes) {
                 winnerId = battle.opponent_id;
                 loserId = battle.user_id;
-                winnerTeamId = battle.opponent_team_id;
-                loserTeamId = battle.team_id;
             }
 
-            await new Promise<void>((resolve, reject) => {
-                db.run(
+            // Use transaction for atomic updates per battle
+            await withTransaction(async () => {
+                // Close the battle
+                await dbRun(
                     "UPDATE hype_battles SET closed = 1, winner_id = ? WHERE id = ?",
-                    [winnerId || winnerTeamId, battle.id],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
+                    [winnerId || battle.team_id, battle.id]
                 );
-            });
 
-            if (winnerId) {
-                await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE users SET coins = coins + 50, wins = wins + 1 WHERE id = ?", [winnerId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
+                if (winnerId) {
+                    await dbRun(
+                        "UPDATE users SET coins = coins + 50, wins = wins + 1 WHERE id = ?",
+                        [winnerId]
+                    );
+                }
                 if (loserId) {
-                    await new Promise<void>((resolve, reject) => {
-                        db.run("UPDATE users SET losses = losses + 1 WHERE id = ?", [loserId], (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        });
-                    });
+                    await dbRun("UPDATE users SET losses = losses + 1 WHERE id = ?", [loserId]);
                 }
-            }
 
-            const winner = await new Promise<any>((resolve, reject) => {
-                db.get("SELECT tier, wins, losses FROM users WHERE id = ?", [winnerId], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                // Calculate and update tiers
+                if (winnerId) {
+                    const winner = await dbGet(
+                        "SELECT tier, wins, losses FROM users WHERE id = ?", [winnerId]
+                    );
+                    if (winner) {
+                        const newTier = calculateTier(winner.wins, winner.losses, winner.tier);
+                        await dbRun("UPDATE users SET tier = ? WHERE id = ?", [newTier, winnerId]);
+                    }
+                }
+                if (loserId) {
+                    const loser = await dbGet(
+                        "SELECT tier, wins, losses FROM users WHERE id = ?", [loserId]
+                    );
+                    if (loser) {
+                        const newTier = calculateTier(loser.wins, loser.losses, loser.tier);
+                        await dbRun("UPDATE users SET tier = ? WHERE id = ?", [newTier, loserId]);
+                    }
+                }
+
+                // Assign category title
+                const title = titleMap[battle.category];
+                if (title && winnerId) {
+                    await dbRun("UPDATE users SET title = NULL WHERE title = ?", [title]);
+                    await dbRun("UPDATE users SET title = ? WHERE id = ?", [title, winnerId]);
+                }
             });
-
-            if (winner) {
-                const newTier = calculateTier(winner.wins, winner.losses, winner.tier);
-                await new Promise<void>((resolve, reject) => {
-                    db.run("UPDATE users SET tier = ? WHERE id = ?", [newTier, winnerId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
-            }
-
-            if (loserId) {
-                const loser = await new Promise<any>((resolve, reject) => {
-                    db.get("SELECT tier, wins, losses FROM users WHERE id = ?", [loserId], (err, row) => {
-                        if (err) reject(err);
-                        resolve(row);
-                    });
-                });
-
-                if (loser) {
-                    const newTier = calculateTier(loser.wins, loser.losses, loser.tier);
-                    await new Promise<void>((resolve, reject) => {
-                        db.run("UPDATE users SET tier = ? WHERE id = ?", [newTier, loserId], (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        });
-                    });
-                }
-            }
-
-            const titleMap = {
-                "Rap Battle": "Rap King",
-                "Dance-off": "Dance Legend",
-                "Meme Creation": "Meme Master",
-                "Artistic Speed Drawing": "Art Ace",
-                "Beat-making Face-off": "Beat Boss"
-            };
-            const title = titleMap[battle.category];
-
-            if (title && winnerId) {
-                await new Promise<void>((resolve, reject) => {
-                    db.run(`UPDATE users SET title = NULL WHERE title = ?`, [title], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
-                await new Promise<void>((resolve, reject) => {
-                    db.run(`UPDATE users SET title = ? WHERE id = ?`, [title, winnerId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
-            }
         }
 
         res.json({ message: "Winners determined and titles assigned!" });
@@ -3488,7 +3407,6 @@ app.get("/api/hall-of-fame", authenticateToken, async (req, res) => {
                 "SELECT d.*, u.username as actual_username FROM developer_picks d JOIN users u ON d.user_id = u.id ORDER BY d.awarded_at DESC"
             ),
         ]);
-        });
 
         console.log(`[${new Date().toISOString()}] /api/hall-of-fame returned data for all sections`);
         res.json({
