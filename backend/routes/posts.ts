@@ -227,7 +227,7 @@ router.post("/react", async (req: express.Request, res: express.Response) => {
         const post = await dbGet("SELECT reactions FROM posts WHERE id = ?", [postId]);
         if (!post) return res.status(404).json({ message: "Post not found" });
 
-        let reactions: { [key: string]: string[] } = post.reactions ? JSON.parse(post.reactions) : {};
+        let reactions: { [key: string]: string[] } = typeof post.reactions === 'string' ? JSON.parse(post.reactions) : (post.reactions || {});
         reactions[reaction] = reactions[reaction] || [];
         if (!reactions[reaction].includes(user.username)) {
             reactions[reaction].push(user.username);
