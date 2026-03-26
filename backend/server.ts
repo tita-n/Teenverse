@@ -9,6 +9,7 @@ import http from "http";
 import { Server } from "socket.io";
 import { backupDatabase, localBackup } from "./backup";
 import { authenticateToken } from "./middleware/auth";
+import { metricsMiddleware, default as metricsRouter } from "./routes/metrics";
 
 // Route imports
 import authRoutes from "./routes/auth";
@@ -248,6 +249,10 @@ const io = new Server(server, {
 });
 
 // ============= ROUTE MOUNTING =============
+
+// Metrics
+app.use(metricsMiddleware);
+app.use("/", metricsRouter);
 
 // Auth routes (register, login, me) - login specifically rate-limited
 app.use("/api/login", loginLimiter);
