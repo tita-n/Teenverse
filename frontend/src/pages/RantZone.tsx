@@ -64,7 +64,7 @@ export default function RantZone() {
     if (!user || !token || !rantContent.trim()) return;
     try {
       setPosting(true);
-      await axios.post("/api/create-rant", { email: user.email, content: rantContent, category, askForAdvice }, withAuth(token));
+      await axios.post("/api/rants/create", { email: user.email, content: rantContent, category, askForAdvice }, withAuth(token));
       setRantContent("");
       setAskForAdvice(false);
       setCategory("Just Need to Vent");
@@ -76,7 +76,7 @@ export default function RantZone() {
   const handleUpvote = async (rantId: number) => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/upvote-rant", { email: user.email, rantId }, withAuth(token));
+      await axios.post("/api/rants/upvote", { email: user.email, rantId }, withAuth(token));
       await refreshRants();
     } catch (err) { console.error("Error upvoting:", err); }
   };
@@ -84,7 +84,7 @@ export default function RantZone() {
   const handleReaction = async (rantId: number, reaction: string) => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/react-to-rant", { email: user.email, rantId, reaction }, withAuth(token));
+      await axios.post("/api/rants/react", { email: user.email, rantId, reaction }, withAuth(token));
       await refreshRants();
     } catch (err) { console.error("Error reacting:", err); }
   };
@@ -92,7 +92,7 @@ export default function RantZone() {
   const handleSendHug = async (rantId: number) => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/send-hug", { email: user.email, rantId }, withAuth(token));
+      await axios.post("/api/rants/hug", { email: user.email, rantId }, withAuth(token));
       await refreshRants();
     } catch (err) { console.error("Error sending hug:", err); }
   };
@@ -100,7 +100,7 @@ export default function RantZone() {
   const handleAddComment = async (rantId: number, content: string) => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/add-comment", { email: user.email, rantId, content }, withAuth(token));
+      await axios.post("/api/rants/comment", { email: user.email, rantId, content }, withAuth(token));
       await refreshRants();
     } catch (err) { console.error("Error adding comment:", err); }
   };

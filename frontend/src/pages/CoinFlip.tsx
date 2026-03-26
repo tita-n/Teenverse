@@ -18,7 +18,7 @@ export default function CoinFlip() {
     try {
       setFlipping(true);
       setResult(null);
-      const res = await axios.post("/api/coin-flip", { userId: user.email, betAmount }, withAuth(token));
+      const res = await axios.post("/api/users/coin-flip", { userId: user.email, betAmount }, withAuth(token));
       setResult(res.data.result);
       setBalance(res.data.newBalance);
     } catch (err) { console.error("Error:", err); }

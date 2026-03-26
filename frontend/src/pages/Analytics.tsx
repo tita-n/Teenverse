@@ -25,7 +25,7 @@ export default function Analytics() {
 
   useEffect(() => {
     if (!user || !token) { setLoading(false); return; }
-    axios.get("/api/platform-analytics", withAuth(token))
+    axios.get("/api/users/platform-analytics", withAuth(token))
       .then((res) => setAnalytics(res.data))
       .catch((err) => console.error("Error:", err))
       .finally(() => setLoading(false));

@@ -28,7 +28,7 @@ export default function HallOfFame() {
 
   useEffect(() => {
     if (!user || !token) { setLoading(false); return; }
-    axios.get("/api/hall-of-fame", withAuth(token))
+    axios.get("/api/users/hall-of-fame", withAuth(token))
       .then((res) => setData(res.data))
       .catch((err) => console.error("Error:", err))
       .finally(() => setLoading(false));

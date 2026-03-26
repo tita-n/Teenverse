@@ -136,7 +136,7 @@ export default function NewsFeed() {
   const handleLike = async (postId: number) => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/like", { postId, email: user.email }, withAuth(token));
+      await axios.post("/api/posts/like", { postId, email: user.email }, withAuth(token));
       setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p)));
     } catch (err) { console.error("Error liking:", err); }
   };

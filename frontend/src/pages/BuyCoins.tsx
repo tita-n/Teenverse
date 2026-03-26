@@ -16,7 +16,7 @@ export default function BuyCoins() {
     if (!user || !token) return;
     try {
       setLoading(true);
-      const res = await axios.post("/api/buy-coins", { email: user.email }, withAuth(token));
+      const res = await axios.post("/api/users/buy-coins", { email: user.email }, withAuth(token));
       setMessage(res.data.message);
     } catch (err: any) {
       setMessage("Error: " + (err.response?.data?.message || err.message));

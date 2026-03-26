@@ -55,8 +55,8 @@ export default function HypeBattles() {
   useEffect(() => {
     if (!user || !token) { setLoading(false); return; }
     Promise.all([
-      axios.get("/api/hype-battles", withAuth(token)),
-      axios.get("/api/teams", withAuth(token)),
+      axios.get("/api/hype-battles/battles", withAuth(token)),
+      axios.get("/api/hype-battles/teams", withAuth(token)),
     ])
       .then(([bRes, tRes]) => { setBattles(bRes.data); setTeams(tRes.data); })
       .catch((err) => console.error("Error fetching data:", err))
@@ -77,15 +77,15 @@ export default function HypeBattles() {
   const refreshData = () => {
     if (!user || !token) return;
     Promise.all([
-      axios.get("/api/hype-battles", withAuth(token)),
-      axios.get("/api/teams", withAuth(token)),
+      axios.get("/api/hype-battles/battles", withAuth(token)),
+      axios.get("/api/hype-battles/teams", withAuth(token)),
     ]).then(([bRes, tRes]) => { setBattles(bRes.data); setTeams(tRes.data); });
   };
 
   const createTeam = async () => {
     if (!user || !token || !newTeamName) return;
     try {
-      await axios.post("/api/teams", { email: user.email, name: newTeamName }, withAuth(token));
+      await axios.post("/api/hype-battles/teams", { email: user.email, name: newTeamName }, withAuth(token));
       setNewTeamName("");
       refreshData();
     } catch (err) { console.error("Error creating team:", err); }
@@ -94,7 +94,7 @@ export default function HypeBattles() {
   const joinTeam = async () => {
     if (!user || !token || !joinTeamId) return;
     try {
-      await axios.post("/api/teams/join", { email: user.email, teamId: joinTeamId }, withAuth(token));
+      await axios.post("/api/hype-battles/teams/join", { email: user.email, teamId: joinTeamId }, withAuth(token));
       setJoinTeamId(null);
       refreshData();
     } catch (err) { console.error("Error joining team:", err); }
@@ -112,7 +112,7 @@ export default function HypeBattles() {
       if (formData.teamId) fd.append("teamId", formData.teamId.toString());
       if (formData.opponentTeamId) fd.append("opponentTeamId", formData.opponentTeamId.toString());
       fd.append("isLive", formData.isLive.toString());
-      await axios.post("/api/hype-battle", fd, { headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" } });
+      await axios.post("/api/hype-battles/battles", fd, { headers: { ...withAuth(token).headers, "Content-Type": "multipart/form-data" } });
       setFormData({ category: "", content: "", mediaFile: null, opponentUsername: "", teamId: null, opponentTeamId: null, isLive: false });
       setMediaPreview(null);
       refreshData();
@@ -122,7 +122,7 @@ export default function HypeBattles() {
   const voteBattle = async (battleId: number, voteFor: "creator" | "opponent") => {
     if (!user || !token) return;
     try {
-      await axios.post("/api/vote-battle", { email: user.email, battleId, voteFor }, withAuth(token));
+      await axios.post("/api/hype-battles/vote", { email: user.email, battleId, voteFor }, withAuth(token));
       if (socket) { socket.emit("vote_battle", { battleId, voteFor }); }
     } catch (err) { console.error("Error voting:", err); }
   };
