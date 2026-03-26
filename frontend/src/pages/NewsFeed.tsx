@@ -114,7 +114,7 @@ export default function NewsFeed() {
     if (!user || !token || !content.trim()) return;
     try {
       setPosting(true);
-      await axios.post("/api/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
+      await axios.post("/api/posts/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
       setContent("");
       const res = await axios.get(`/api/posts/newsfeed?limit=${limit}&offset=0`, withAuth(token));
       const fresh = res.data.map((p: Post) => ({ ...p, reactions: p.reactions ? JSON.parse(p.reactions as any) : {} }));

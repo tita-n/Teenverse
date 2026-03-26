@@ -18,7 +18,7 @@ export default function CreatePost() {
     if (!user || !token || !content.trim()) return;
     try {
       setPosting(true);
-      const res = await axios.post("/api/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
+      const res = await axios.post("/api/posts/create-post", { email: user.email, content, mode: "main" }, withAuth(token));
       setMessage(res.data.message);
       setContent("");
     } catch (err: any) {
