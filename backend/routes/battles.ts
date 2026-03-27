@@ -3,6 +3,8 @@ import { dbGet, dbAll, dbRun, withTransaction } from "../database";
 
 const router = express.Router();
 
+// ============ TEAMS (keep existing) ============
+
 // Get all teams
 router.get("/teams", async (req, res, next) => {
     try {
@@ -48,35 +50,36 @@ router.post("/teams/join", async (req, res, next) => {
         const user = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
         if (!user) return res.status(404).json({ message: "User not found" });
 
-        const alreadyMember = await dbGet("SELECT team_id FROM team_members WHERE team_id = ? AND user_id = ?", [teamId, user.id]);
-        if (alreadyMember) return res.status(400).json({ message: "Already a member of this team" });
+        const isMember = await dbGet("SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?", [teamId, user.id]);
+        if (isMember) return res.status(400).json({ message: "Already a member" });
 
         await dbRun("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", [teamId, user.id]);
-        res.json({ message: "Joined team successfully!" });
+        res.json({ message: "Joined team!" });
     } catch (err) {
         console.error("Join team error:", err);
         next(err);
     }
 });
 
-// Get hype battles
-router.get("/battles", async (req, res, next) => {
+// ============ NEW HYPE BATTLES API ============
+
+const VALID_CATEGORIES = ["Dance", "Rap", "Singing", "Comedy", "Art", "Fitness", "General"];
+const BATTLE_DURATION_HOURS = 24;
+const DEFAULT_REWARD_COINS = 100;
+
+// Get all hype battles (exclude completed)
+router.get("/hype-battles", async (req, res, next) => {
     try {
-        const { category, isLive } = req.query;
-        let query = "SELECT h.*, u.username as actual_username FROM hype_battles h JOIN users u ON h.user_id = u.id WHERE h.closed = 0";
-        const params: any[] = [];
-
-        if (category) {
-            query += " AND h.category = ?";
-            params.push(category);
-        }
-        if (isLive) {
-            query += " AND h.is_live = ?";
-            params.push(isLive === "true" ? 1 : 0);
-        }
-
-        query += " ORDER BY h.created_at DESC";
-        const battles = await dbAll(query, params);
+        const battles = await dbAll(`
+            SELECT hb.*, 
+                   u1.username as challenger_username, u1.profile_media_url as challenger_profile,
+                   u2.username as opponent_username, u2.profile_media_url as opponent_profile
+            FROM hype_battles hb
+            LEFT JOIN users u1 ON hb.challenger_id = u1.id
+            LEFT JOIN users u2 ON hb.opponent_id = u2.id
+            ORDER BY hb.created_at DESC
+            LIMIT 50
+        `);
         res.json(battles);
     } catch (err) {
         console.error("Get battles error:", err);
@@ -84,115 +87,205 @@ router.get("/battles", async (req, res, next) => {
     }
 });
 
-// Vote on a battle
-router.post("/vote", async (req, res, next) => {
+// Get single battle with details
+router.get("/hype-battles/:id", async (req, res, next) => {
     try {
-        const { email, battleId, voteFor } = req.body;
-        if (req.user.email !== email) {
-            return res.status(403).json({ message: "Unauthorized" });
-        }
-
-        if (!["creator", "opponent"].includes(voteFor)) {
-            return res.status(400).json({ message: "Invalid vote target" });
-        }
-
-        const result = await withTransaction(async () => {
-            const user = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
-            if (!user) throw new Error("USER_NOT_FOUND");
-
-            const battle = await dbGet("SELECT closed, voting_deadline FROM hype_battles WHERE id = ?", [battleId]);
-            if (!battle) throw new Error("BATTLE_NOT_FOUND");
-            if (battle.closed) throw new Error("BATTLE_CLOSED");
-            if (new Date(battle.voting_deadline) < new Date()) throw new Error("VOTING_ENDED");
-
-            const existingVote = await dbGet("SELECT id FROM battle_votes WHERE user_id = ? AND battle_id = ?", [user.id, battleId]);
-            if (existingVote) throw new Error("ALREADY_VOTED");
-
-            await dbRun("INSERT INTO battle_votes (user_id, battle_id, vote_for) VALUES (?, ?, ?)", [user.id, battleId, voteFor]);
-
-            const field = voteFor === "creator" ? "votes" : "opponent_votes";
-            await dbRun(`UPDATE hype_battles SET ${field} = ${field} + 1 WHERE id = ?`, [battleId]);
-
-            return { message: "Vote cast successfully!" };
-        });
-
-        res.json(result);
-    } catch (err: any) {
-        const errorMap: Record<string, { status: number; message: string }> = {
-            USER_NOT_FOUND: { status: 404, message: "User not found" },
-            BATTLE_NOT_FOUND: { status: 404, message: "Battle not found" },
-            BATTLE_CLOSED: { status: 400, message: "Battle is closed" },
-            VOTING_ENDED: { status: 400, message: "Voting has ended" },
-            ALREADY_VOTED: { status: 400, message: "You already voted for this battle!" },
-        };
-
-        const mapped = errorMap[err.message];
-        if (mapped) {
-            return res.status(mapped.status).json({ message: mapped.message });
-        }
-
-        console.error("Vote battle error:", err);
+        const battle = await dbGet(`
+            SELECT hb.*, 
+                   u1.username as challenger_username, u1.profile_media_url as challenger_profile, u1.verified as challenger_verified,
+                   u2.username as opponent_username, u2.profile_media_url as opponent_profile, u2.verified as opponent_verified
+            FROM hype_battles hb
+            LEFT JOIN users u1 ON hb.challenger_id = u1.id
+            LEFT JOIN users u2 ON hb.opponent_id = u2.id
+            WHERE hb.id = ?
+        `, [req.params.id]);
+        
+        if (!battle) return res.status(404).json({ message: "Battle not found" });
+        res.json(battle);
+    } catch (err) {
+        console.error("Get battle error:", err);
         next(err);
     }
 });
 
-// Determine winners for expired battles
-router.get("/determine-winners", async (req, res, next) => {
+// Create a new battle challenge
+router.post("/hype-battles", async (req, res, next) => {
     try {
-        const battles = await dbAll(
-            "SELECT id, user_id, opponent_id, team_id, opponent_team_id, votes, opponent_votes, category FROM hype_battles WHERE voting_deadline < DATETIME('now') AND closed = 0"
-        );
-
-        for (const battle of battles) {
-            let winnerId: number | null = null;
-            let loserId: number | null = null;
-
-            if (battle.votes > battle.opponent_votes) {
-                winnerId = battle.user_id;
-                loserId = battle.opponent_id;
-            } else if (battle.opponent_votes > battle.votes) {
-                winnerId = battle.opponent_id;
-                loserId = battle.user_id;
-            }
-
-            await dbRun("UPDATE hype_battles SET closed = 1, winner_id = ? WHERE id = ?", [winnerId || battle.team_id, battle.id]);
-
-            if (winnerId) {
-                await dbRun("UPDATE users SET coins = coins + 50, wins = wins + 1 WHERE id = ?", [winnerId]);
-
-                // Calculate tier
-                const winner = await dbGet("SELECT wins, losses, tier FROM users WHERE id = ?", [winnerId]);
-                if (winner) {
-                    const winRate = winner.wins / (winner.wins + winner.losses || 1);
-                    let newTier = winner.tier;
-                    if (winner.wins + winner.losses >= 5) {
-                        if (winRate >= 0.7 && newTier < 5) newTier += 1;
-                        else if (winRate < 0.3 && newTier > 1) newTier -= 1;
-                    }
-                    await dbRun("UPDATE users SET tier = ? WHERE id = ?", [newTier, winnerId]);
-                }
-
-                if (loserId) {
-                    await dbRun("UPDATE users SET losses = losses + 1 WHERE id = ?", [loserId]);
-                }
-
-                // Award title
-                const titleMap: Record<string, string> = {
-                    rap: "Rap King",
-                    dance: "Dance Legend",
-                    comedy: "Meme Master",
-                };
-                const title = titleMap[battle.category];
-                if (title) {
-                    await dbRun("UPDATE users SET title = NULL WHERE title = ?", [title]);
-                    await dbRun("UPDATE users SET title = ? WHERE id = ?", [title, winnerId]);
-                }
-            }
+        const { email, title, description, category, opponentUsername, mediaUrl, mediaType, content, challengeType = "open" } = req.body;
+        
+        if (!email || !title || !category || !mediaUrl) {
+            return res.status(400).json({ message: "Title, category, and media are required" });
         }
 
-        res.json({ message: "Winners determined and titles assigned!" });
+        if (!VALID_CATEGORIES.includes(category)) {
+            return res.status(400).json({ message: "Invalid category" });
+        }
+
+        const challenger = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
+        if (!challenger) return res.status(404).json({ message: "User not found" });
+
+        let opponentId = null;
+        if (opponentUsername) {
+            const opponent = await dbGet("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", [opponentUsername]);
+            if (opponent) opponentId = opponent.id;
+        }
+
+        const result = await dbRun(`
+            INSERT INTO hype_battles (title, description, category, challenge_type, challenger_id, challenger_media_url, challenger_media_type, challenger_content, challenger_submitted_at, challenger_votes, opponent_id, status, voting_hours, reward_coins)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'pending', ?, ?)
+        `, [title, description, category, challengeType, challenger.id, mediaUrl, mediaType, content, new Date().toISOString(), opponentId, BATTLE_DURATION_HOURS, DEFAULT_REWARD_COINS]);
+
+        res.json({ message: "Battle created!", battleId: result.lastID });
     } catch (err) {
-        console.error("Determine winners error:", err);
+        console.error("Create battle error:", err);
+        next(err);
+    }
+});
+
+// Submit response to a battle (opponent submits their entry)
+router.post("/hype-battles/:id/submit", async (req, res, next) => {
+    try {
+        const { email, mediaUrl, mediaType, content } = req.body;
+        const battleId = req.params.id;
+
+        const user = await dbGet("SELECT id, username FROM users WHERE email = ?", [email]);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const battle = await dbGet("SELECT * FROM hype_battles WHERE id = ?", [battleId]);
+        if (!battle) return res.status(404).json({ message: "Battle not found" });
+
+        // Check if user is the challenger or opponent
+        if (battle.challenger_id !== user.id && battle.opponent_id !== user.id) {
+            return res.status(403).json({ message: "Not invited to this battle" });
+        }
+
+        // Check if already submitted
+        if (battle.opponent_id === user.id && battle.opponent_submitted_at) {
+            return res.status(400).json({ message: "Already submitted" });
+        }
+
+        // Update with opponent's submission
+        const votingDeadline = new Date();
+        votingDeadline.setHours(votingDeadline.getHours() + battle.voting_hours);
+
+        await dbRun(`
+            UPDATE hype_battles 
+            SET opponent_id = ?, opponent_media_url = ?, opponent_media_type = ?, opponent_content = ?, 
+                opponent_submitted_at = ?, status = 'live', voting_deadline = ?
+            WHERE id = ?
+        `, [user.id, mediaUrl, mediaType, content, new Date().toISOString(), votingDeadline.toISOString(), battleId]);
+
+        // Notify via socket would be handled here if io is passed
+
+        res.json({ message: "Entry submitted! Battle is now live!" });
+    } catch (err) {
+        console.error("Submit battle error:", err);
+        next(err);
+    }
+});
+
+// Vote for a battle
+router.post("/hype-battles/:id/vote", async (req, res, next) => {
+    try {
+        const { email, voteFor } = req.body; // voteFor = "challenger" or "opponent"
+        const battleId = req.params.id;
+
+        if (!voteFor || !["challenger", "opponent"].includes(voteFor)) {
+            return res.status(400).json({ message: "Invalid vote - must be 'challenger' or 'opponent'" });
+        }
+
+        const user = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // Check if already voted
+        const existingVote = await dbGet(
+            "SELECT 1 FROM battle_votes WHERE user_id = ? AND battle_id = ?",
+            [user.id, battleId]
+        );
+        if (existingVote) {
+            return res.status(400).json({ message: "Already voted" });
+        }
+
+        // Record the vote
+        await dbRun(
+            "INSERT INTO battle_votes (user_id, battle_id, vote_for) VALUES (?, ?, ?)",
+            [user.id, battleId, voteFor]
+        );
+
+        // Update vote count
+        if (voteFor === "challenger") {
+            await dbRun("UPDATE hype_battles SET challenger_votes = challenger_votes + 1 WHERE id = ?", [battleId]);
+        } else {
+            await dbRun("UPDATE hype_battles SET opponent_votes = opponent_votes + 1 WHERE id = ?", [battleId]);
+        }
+
+        res.json({ message: "Vote recorded!" });
+    } catch (err) {
+        console.error("Vote error:", err);
+        next(err);
+    }
+});
+
+// Get user's vote for a battle
+router.get("/hype-battles/:id/my-vote", async (req, res, next) => {
+    try {
+        const { email } = req.query;
+        const battleId = req.params.id;
+
+        const user = await dbGet("SELECT id FROM users WHERE email = ?", [email as string]);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const vote = await dbGet(
+            "SELECT vote_for FROM battle_votes WHERE user_id = ? AND battle_id = ?",
+            [user.id, battleId]
+        );
+
+        res.json({ vote: vote?.vote_for || null });
+    } catch (err) {
+        console.error("Get vote error:", err);
+        next(err);
+    }
+});
+
+// Check battle status and determine winner if expired
+router.post("/hype-battles/:id/check-status", async (req, res, next) => {
+    try {
+        const battleId = req.params.id;
+
+        const battle = await dbGet("SELECT * FROM hype_battles WHERE id = ?", [battleId]);
+        if (!battle) return res.status(404).json({ message: "Battle not found" });
+
+        if (battle.status === "completed") {
+            return res.json({ message: "Battle already completed", winner_id: battle.winner_id });
+        }
+
+        // Check if voting deadline has passed
+        if (battle.voting_deadline && new Date() > new Date(battle.voting_deadline) && battle.status === "live") {
+            let winnerId = null;
+            
+            if (battle.challenger_votes > battle.opponent_votes) {
+                winnerId = battle.challenger_id;
+            } else if (battle.opponent_votes > battle.challenger_votes) {
+                winnerId = battle.opponent_id;
+            }
+            // Tie = no winner
+
+            await dbRun(`
+                UPDATE hype_battles SET status = 'completed', winner_id = ? WHERE id = ?
+            `, [winnerId, battleId]);
+
+            // Award coins to winner
+            if (winnerId) {
+                await dbRun("UPDATE users SET coins = coins + ? WHERE id = ?", [battle.reward_coins, winnerId]);
+                await dbRun("UPDATE users SET xp = xp + 50 WHERE id = ?", [winnerId]); // Bonus XP
+            }
+
+            return res.json({ message: "Battle completed", winner_id: winnerId });
+        }
+
+        res.json({ status: battle.status, voting_deadline: battle.voting_deadline });
+    } catch (err) {
+        console.error("Check status error:", err);
         next(err);
     }
 });

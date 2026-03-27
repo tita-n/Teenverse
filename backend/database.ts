@@ -160,14 +160,35 @@ export async function initializeDatabase(): Promise<void> {
     )
   `);
 
-  await query(`
-    CREATE TABLE IF NOT EXISTS replies (
+await query(`
+    CREATE TABLE IF NOT EXISTS battle_votes (
       id SERIAL PRIMARY KEY,
-      comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      content TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      battle_id INTEGER NOT NULL REFERENCES hype_battles(id) ON DELETE CASCADE,
+      vote_for TEXT NOT NULL CHECK (vote_for IN ('challenger', 'opponent')),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, battle_id)
     )
+  `);
+
+  await query(`CREATE INDEX IF NOT EXISTS idx_battle_votes_battle ON battle_votes(battle_id)`);
+
+  // Add updated_at trigger
+  await query(`
+    CREATE OR REPLACE FUNCTION update_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at = NOW();
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+  
+  await query(`
+    CREATE OR REPLACE TRIGGER update_hype_battles_updated
+    BEFORE UPDATE ON hype_battles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at()
   `);
 
   await query(`
@@ -314,22 +335,29 @@ export async function initializeDatabase(): Promise<void> {
   await query(`
     CREATE TABLE IF NOT EXISTS hype_battles (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      opponent_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
-      opponent_team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      description TEXT,
       category TEXT NOT NULL,
-      content TEXT,
-      media_url TEXT,
-      votes INTEGER DEFAULT 0,
+      challenge_type TEXT DEFAULT 'open', -- 'open' or 'direct'
+      challenger_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      challenger_media_url TEXT,
+      challenger_media_type TEXT,
+      challenger_content TEXT,
+      challenger_submitted_at TIMESTAMP,
+      challenger_votes INTEGER DEFAULT 0,
+      opponent_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      opponent_media_url TEXT,
+      opponent_media_type TEXT,
+      opponent_content TEXT,
+      opponent_submitted_at TIMESTAMP,
       opponent_votes INTEGER DEFAULT 0,
-      is_live INTEGER DEFAULT 0,
+      voting_hours INTEGER DEFAULT 24,
       voting_deadline TIMESTAMP,
+      status TEXT DEFAULT 'pending', -- 'pending' (waiting for opponent), 'live' (both submitted), 'completed'
       winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reward_coins INTEGER DEFAULT 100,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      closed INTEGER DEFAULT 0,
-      tournament_id INTEGER,
-      opponent_media_url TEXT
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -346,21 +374,63 @@ export async function initializeDatabase(): Promise<void> {
   await query(`
     CREATE TABLE IF NOT EXISTS showdown_tournaments (
       id SERIAL PRIMARY KEY,
-      season TEXT,
-      status TEXT,
-      start_date TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      bracket_size INTEGER DEFAULT 16, -- 8, 16, or 32
+      category TEXT, -- 'rap', 'dance', 'singing', etc.
+      status TEXT DEFAULT 'registration', -- 'registration', 'live', 'completed'
+      registration_deadline TIMESTAMP,
+      round_duration_hours INTEGER DEFAULT 24,
+      current_round INTEGER DEFAULT 1,
+      total_rounds INTEGER DEFAULT 4,
+      winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reward_coins INTEGER DEFAULT 1000,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      winner_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   await query(`
     CREATE TABLE IF NOT EXISTS showdown_participants (
+      id SERIAL PRIMARY KEY,
       tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      status TEXT,
-      bracket_position INTEGER,
-      PRIMARY KEY (tournament_id, user_id)
+      media_url TEXT,
+      media_type TEXT,
+      content TEXT,
+      submitted_at TIMESTAMP,
+      votes INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      eliminated_at TIMESTAMP,
+      round_won INTEGER DEFAULT 0,
+      UNIQUE(tournament_id, user_id)
+    )
+  `);
+
+  // Rounds within a tournament
+  await query(`
+    CREATE TABLE IF NOT EXISTS showdown_rounds (
+      id SERIAL PRIMARY KEY,
+      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
+      round_number INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending',
+      voting_deadline TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Battles within each round
+  await query(`
+    CREATE TABLE IF NOT EXISTS showdown_battles (
+      id SERIAL PRIMARY KEY,
+      round_id INTEGER NOT NULL REFERENCES showdown_rounds(id) ON DELETE CASCADE,
+      participant1_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
+      participant2_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
+      participant1_votes INTEGER DEFAULT 0,
+      participant2_votes INTEGER DEFAULT 0,
+      winner_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
+      status TEXT DEFAULT 'pending', -- 'pending', 'live', 'completed'
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
