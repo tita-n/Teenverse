@@ -411,9 +411,9 @@ await query(`
   await query(`
     CREATE TABLE IF NOT EXISTS showdown_rounds (
       id SERIAL PRIMARY KEY,
-      tournament_id INTEGER NOT NULL REFERENCES showdown_tournaments(id) ON DELETE CASCADE,
-      round_number INTEGER NOT NULL,
-      status TEXT DEFAULT 'pending',
+      tournament_id INTEGER,
+      round_number INTEGER,
+      status TEXT,
       voting_deadline TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
@@ -423,13 +423,13 @@ await query(`
   await query(`
     CREATE TABLE IF NOT EXISTS showdown_battles (
       id SERIAL PRIMARY KEY,
-      round_id INTEGER NOT NULL REFERENCES showdown_rounds(id) ON DELETE CASCADE,
-      participant1_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
-      participant2_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
+      round_id INTEGER,
+      participant1_id INTEGER,
+      participant2_id INTEGER,
       participant1_votes INTEGER DEFAULT 0,
       participant2_votes INTEGER DEFAULT 0,
-      winner_id INTEGER REFERENCES showdown_participants(id) ON DELETE SET NULL,
-      status TEXT DEFAULT 'pending', -- 'pending', 'live', 'completed'
+      winner_id INTEGER,
+      status TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
