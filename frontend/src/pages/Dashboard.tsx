@@ -216,54 +216,47 @@ export default function Dashboard() {
   if (!user || !token) return <AuthRequiredState />;
 
   return (
-    <Layout maxWidth="2xl">
+    <Layout maxWidth="3xl">
+      {/* Header */}
       <div className="mb-6">
-        <h1 className="text-h1">Welcome, {user.username || user.email}!</h1>
-        <p className="text-tx-secondary mt-1">What's happening today?</p>
+        <h1 className="text-3xl font-display font-bold">
+          Hey, <span className="text-gradient">{user.username || user.email?.split('@')[0]}!</span> 👋
+        </h1>
+        <p className="text-dark-400 mt-1">What's the tea today? 🍵</p>
       </div>
 
-      {/* Create Post */}
-      <div className="card p-4 sm:p-6 mb-6">
-        <div className="flex gap-3">
-          <div className="w-10 h-10 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 font-semibold text-sm flex-shrink-0">
+      {/* Create Post - Big & Prominent */}
+      <div className="card card-hover p-4 sm:p-5 mb-6 border border-dark-600/50">
+        <div className="flex gap-3 items-start">
+          <div className="w-14 h-14 bg-gradient-to-br from-neon-red to-red-700 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-glow-sm flex-shrink-0">
             {(user.username || user.email || "U").charAt(0).toUpperCase()}
           </div>
           <div className="flex-1">
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="What's on your mind?"
-              className="input min-h-[80px] resize-none"
-              rows={2}
+              placeholder="What's on your mind? Spill it 🍵"
+              className="input min-h-[100px] resize-none text-lg"
+              rows={3}
             />
-            <div className="flex justify-end mt-3">
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-dark-700">
+              <div className="flex gap-2">
+                {/* Quick add_media icons could go here */}
+              </div>
               <button
                 onClick={handlePost}
                 disabled={!content.trim() || posting}
-                className="btn-primary"
+                className="btn-primary px-6 py-3 text-base font-bold"
               >
-                {posting ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Posting...
-                  </>
-                ) : (
-                  <>
-                    <PenSquare className="w-4 h-4 mr-2" />
-                    Post
-                  </>
-                )}
+                {posting ? "Posting..." : "PostIt 🚀"}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Posts Feed */}
-      <div className="space-y-4">
+      {/* Posts Feed - Clean spacing */}
+      <div className="space-y-6 max-w-2xl mx-auto">
         {posts.length > 0 ? (
           posts.map((post, index) => (
             <PostCard

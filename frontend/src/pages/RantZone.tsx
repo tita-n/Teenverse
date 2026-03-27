@@ -6,191 +6,22 @@ import Layout from "../components/ui/Layout";
 import Button from "../components/ui/Button";
 import Textarea from "../components/ui/Textarea";
 import { LoadingState, AuthRequiredState, EmptyState } from "../components/ui/PageStates";
-import { Flame, Heart, ArrowUp, MessageCircle, Filter } from "lucide-react";
+import { Flame, Heart, ArrowUp, MessageCircle, Filter, Ghost, Sparkles } from "lucide-react";
 import DOMPurify from "dompurify";
 
 const sanitizeContent = (content: string): string => {
-  return DOMPurify.sanitize(content, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  return DOMPurify.sanitize(content, { ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'br'], ALLOWED_ATTR: [] });
 };
 
 interface Rant {
-  id: number;
-  content: string;
-  category: string;
-  upvotes: number;
-  reactions: { [key: string]: number };
-  hugs: number;
-  ask_for_advice: number;
-  created_at: string;
-  comments: RantComment[];
+  id: number; content: string; category: string; upvotes: number;
+  reactions: { [key: string]: number }; hugs: number; ask_for_advice: number;
+  created_at: string; comments: RantComment[];
 }
+interface RantComment { id: number; rant_id: number; content: string; created_at: string; }
 
-interface RantComment {
-  id: number;
-  rant_id: number;
-  content: string;
-  created_at: string;
-}
-
-const categories = ["School Life", "Family Drama", "Relationship Wahala", "Self-Doubt & Mental Struggles", "Fake Friends", "Pressure & Anxiety", "Just Need to Vent"];
+const categories = ["School", "Family", "Relationships", "Self-Doubt", "Friends", "Pressure", "Just Vent"];
 const reactions = ["❤️", "😢", "😠", "🥲", "😂", "😮", "🤗"];
-
-export default function RantZone() {
-  const [rantContent, setRantContent] = useState("");
-  const [category, setCategory] = useState("Just Need to Vent");
-  const [askForAdvice, setAskForAdvice] = useState(false);
-  const [rants, setRants] = useState<Rant[]>([]);
-  const [filteredCategory, setFilteredCategory] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [posting, setPosting] = useState(false);
-  const { user, token, loading: authLoading } = useAuth();
-
-  useEffect(() => {
-    if (!user || !token) { setLoading(false); return; }
-    const params = filteredCategory ? { category: filteredCategory } : {};
-    axios.get("/api/rants", { ...withAuth(token), params })
-      .then((res) => setRants(res.data))
-      .catch((err) => console.error("Error fetching rants:", err))
-      .finally(() => setLoading(false));
-  }, [user, token, filteredCategory]);
-
-  const refreshRants = () => {
-    if (!user || !token) return;
-    const params = filteredCategory ? { category: filteredCategory } : {};
-    return axios.get("/api/rants", { ...withAuth(token), params }).then((res) => setRants(res.data));
-  };
-
-  const handlePostRant = async () => {
-    if (!user || !token || !rantContent.trim()) return;
-    try {
-      setPosting(true);
-      await axios.post("/api/rants/create", { email: user.email, content: rantContent, category, askForAdvice }, withAuth(token));
-      setRantContent("");
-      setAskForAdvice(false);
-      setCategory("Just Need to Vent");
-      await refreshRants();
-    } catch (err) { console.error("Error posting rant:", err); }
-    finally { setPosting(false); }
-  };
-
-  const handleUpvote = async (rantId: number) => {
-    if (!user || !token) return;
-    try {
-      await axios.post("/api/rants/upvote", { email: user.email, rantId }, withAuth(token));
-      await refreshRants();
-    } catch (err) { console.error("Error upvoting:", err); }
-  };
-
-  const handleReaction = async (rantId: number, reaction: string) => {
-    if (!user || !token) return;
-    try {
-      await axios.post("/api/rants/react", { email: user.email, rantId, reaction }, withAuth(token));
-      await refreshRants();
-    } catch (err) { console.error("Error reacting:", err); }
-  };
-
-  const handleSendHug = async (rantId: number) => {
-    if (!user || !token) return;
-    try {
-      await axios.post("/api/rants/hug", { email: user.email, rantId }, withAuth(token));
-      await refreshRants();
-    } catch (err) { console.error("Error sending hug:", err); }
-  };
-
-  const handleAddComment = async (rantId: number, content: string) => {
-    if (!user || !token) return;
-    try {
-      await axios.post("/api/rants/comment", { email: user.email, rantId, content }, withAuth(token));
-      await refreshRants();
-    } catch (err) { console.error("Error adding comment:", err); }
-  };
-
-  if (authLoading) return <LoadingState message="Checking authentication..." />;
-  if (!user || !token) return <AuthRequiredState />;
-  if (loading) return <LoadingState message="Loading rants..." />;
-
-  const trendingRants = [...rants].sort((a, b) => b.upvotes - a.upvotes).slice(0, 5);
-
-  return (
-    <Layout maxWidth="3xl">
-      <div className="mb-6">
-        <h1 className="text-h1 flex items-center gap-2">
-          <Flame className="w-7 h-7 text-brand-500" />
-          Rant Zone
-        </h1>
-        <p className="text-tx-secondary mt-1">A safe space to let it all out. No judgment.</p>
-      </div>
-
-      {/* Post Rant */}
-      <div className="card p-6 mb-6">
-        <h2 className="font-semibold text-tx-primary mb-4">Share Your Thoughts</h2>
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className="input mb-3">
-          {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-        </select>
-        <Textarea
-          value={rantContent}
-          onChange={(e) => setRantContent(e.target.value)}
-          placeholder="Let it all out... (Your rant will be anonymous)"
-          rows={3}
-          className="mb-3"
-        />
-        <label className="flex items-center gap-2 mb-4 cursor-pointer">
-          <input type="checkbox" checked={askForAdvice} onChange={(e) => setAskForAdvice(e.target.checked)} className="w-4 h-4 text-brand-600 rounded" />
-          <span className="text-sm text-tx-secondary">Ask for advice</span>
-        </label>
-        <Button onClick={handlePostRant} loading={posting} disabled={!rantContent.trim()}>
-          Post Anonymously
-        </Button>
-      </div>
-
-      {/* Filter */}
-      <div className="mb-6">
-        <h2 className="font-semibold text-tx-primary mb-3 flex items-center gap-2">
-          <Filter className="w-4 h-4" />
-          Filter by Category
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setFilteredCategory(null)} className={`btn-sm rounded-full ${!filteredCategory ? "btn-primary" : "btn-secondary"}`}>
-            All
-          </button>
-          {categories.map((cat) => (
-            <button key={cat} onClick={() => setFilteredCategory(cat)} className={`btn-sm rounded-full ${filteredCategory === cat ? "btn-primary" : "btn-secondary"}`}>
-              {cat}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Trending */}
-      {trendingRants.length > 0 && (
-        <div className="card p-6 mb-6">
-          <h2 className="font-semibold text-tx-primary mb-4 flex items-center gap-2">
-            🔥 Trending Rants
-          </h2>
-          <div className="space-y-4">
-            {trendingRants.map((rant) => (
-              <RantCard key={rant.id} rant={rant} onUpvote={handleUpvote} onReaction={handleReaction} onHug={handleSendHug} onComment={handleAddComment} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* All Rants */}
-      <div className="card p-6">
-        <h2 className="font-semibold text-tx-primary mb-4">Recent Rants</h2>
-        {rants.length > 0 ? (
-          <div className="space-y-4">
-            {rants.map((rant) => (
-              <RantCard key={rant.id} rant={rant} onUpvote={handleUpvote} onReaction={handleReaction} onHug={handleSendHug} onComment={handleAddComment} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No rants yet" message="Be the first to share your thoughts!" icon={<Flame className="w-8 h-8 text-tx-muted" />} />
-        )}
-      </div>
-    </Layout>
-  );
-}
 
 function RantCard({ rant, onUpvote, onReaction, onHug, onComment }: {
   rant: Rant;
@@ -203,52 +34,163 @@ function RantCard({ rant, onUpvote, onReaction, onHug, onComment }: {
   const [commentContent, setCommentContent] = useState("");
 
   const handleSubmit = () => {
-    if (commentContent.trim()) {
-      onComment(rant.id, commentContent);
-      setCommentContent("");
-    }
+    if (commentContent.trim()) { onComment(rant.id, commentContent); setCommentContent(""); }
   };
 
   return (
-    <div className="border-b border-surface-border pb-4 last:border-b-0 last:pb-0">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="badge badge-brand text-xs">{rant.category}</span>
-        {rant.ask_for_advice === 1 && <span className="badge badge-neutral text-xs">💬 Advice Requested</span>}
-        <span className="text-xs text-tx-muted ml-auto">{new Date(rant.created_at).toLocaleString(undefined, { month: "short", day: "numeric" })}</span>
+    <div className="card card-hover p-5 mb-4">
+      {/* Category Badge */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="badge badge-brand text-xs px-3 py-1">{rant.category}</span>
+        {rant.ask_for_advice === 1 && <span className="badge bg-neon-cyan/20 text-neon-cyan text-xs px-3 py-1">💬 Need Advice</span>}
+        <span className="text-xs text-dark-500 ml-auto">{new Date(rant.created_at).toLocaleDateString()}</span>
       </div>
-      <p className="text-tx-primary mb-3">{sanitizeContent(rant.content)}</p>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => onUpvote(rant.id)} className="btn-ghost btn-sm flex items-center gap-1 text-tx-secondary hover:text-blue-600">
-          <ArrowUp className="w-4 h-4" /> {rant.upvotes || 0}
+      
+      {/* Content */}
+      <p className="text-white text-lg mb-4 leading-relaxed">{rant.content}</p>
+      
+      {/* Actions - Big tappable buttons */}
+      <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-dark-700">
+        <button onClick={() => onUpvote(rant.id)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-green-500/10 hover:text-green-500 transition-all group">
+          <ArrowUp className="w-6 h-6 group-hover:scale-125 transition-transform" />
+          <span className="font-bold">{rant.upvotes || 0}</span>
         </button>
-        <button onClick={() => onHug(rant.id)} className="btn-ghost btn-sm flex items-center gap-1 text-tx-secondary hover:text-pink-600">
-          <Heart className="w-4 h-4" /> {rant.hugs || 0}
+        
+        <button onClick={() => onHug(rant.id)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-pink-500/10 hover:text-pink-500 transition-all group">
+          <Heart className="w-6 h-6 group-hover:scale-125 transition-transform" fill="currentColor" />
+          <span className="font-bold">{rant.hugs || 0}</span>
         </button>
-        {reactions.map((r) => (
-          <button key={r} onClick={() => onReaction(rant.id, r)} className="btn-ghost btn-sm text-tx-secondary hover:text-tx-primary">
-            {r} {rant.reactions?.[r] || 0}
-          </button>
-        ))}
-        <button onClick={() => setShowComments(!showComments)} className="btn-ghost btn-sm flex items-center gap-1 text-brand-600 ml-auto">
-          <MessageCircle className="w-4 h-4" /> {rant.comments.length}
+        
+        <div className="flex gap-1">
+          {reactions.map((r) => (
+            <button key={r} onClick={() => onReaction(rant.id, r)} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-dark-700 text-lg hover:scale-125 transition-all">
+              {r}
+            </button>
+          ))}
+        </div>
+        
+        <button onClick={() => setShowComments(!showComments)} className="ml-auto flex items-center gap-2 px-4 py-2.5 rounded-xl hover:bg-neon-cyan/10 text-dark-400 hover:text-neon-cyan transition-all">
+          <MessageCircle className="w-5 h-5" />
+          <span className="font-bold">{rant.comments.length}</span>
         </button>
       </div>
 
+      {/* Comments */}
       {showComments && (
-        <div className="mt-3 pl-4 border-l-2 border-surface-border space-y-3">
+        <div className="mt-4 pt-4 border-t border-dark-700 space-y-3">
           {rant.comments.map((comment) => (
-            <div key={comment.id} className="text-sm">
-              <p className="text-tx-primary">{sanitizeContent(comment.content)}</p>
-              <p className="text-xs text-tx-muted">{new Date(comment.created_at).toLocaleString()}</p>
+            <div key={comment.id} className="bg-dark-800/50 p-3 rounded-xl">
+              <p className="text-dark-200 text-sm">{comment.content}</p>
             </div>
           ))}
           <div className="flex gap-2">
-            <input value={commentContent} onChange={(e) => setCommentContent(e.target.value)} placeholder="Comment (anonymous)" className="input text-sm flex-1" onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} />
-            <Button size="sm" onClick={handleSubmit} disabled={!commentContent.trim()}>Post</Button>
+            <input value={commentContent} onChange={(e) => setCommentContent(e.target.value)} placeholder="Drop a comment..." className="input flex-1" onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} />
+            <Button size="sm" onClick={handleSubmit} disabled={!commentContent.trim()}>Send</Button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export default function RantZone() {
+  const [rantContent, setRantContent] = useState("");
+  const [category, setCategory] = useState("Just Vent");
+  const [askForAdvice, setAskForAdvice] = useState(false);
+  const [rants, setRants] = useState<Rant[]>([]);
+  const [filteredCategory, setFilteredCategory] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+  const { user, token, loading: authLoading } = useAuth();
+
+  const refreshRants = () => {
+    if (!user || !token) return;
+    const params = filteredCategory ? { category: filteredCategory } : {};
+    return axios.get("/api/rants", { ...withAuth(token), params }).then((res) => setRants(res.data));
+  };
+
+  useEffect(() => {
+    if (!user || !token) { setLoading(false); return; }
+    const params = filteredCategory ? { category: filteredCategory } : {};
+    axios.get("/api/rants", { ...withAuth(token), params }).then((res) => setRants(res.data)).finally(() => setLoading(false));
+  }, [user, token, filteredCategory]);
+
+  const handlePostRant = async () => {
+    if (!user || !token || !rantContent.trim()) return;
+    try { setPosting(true); await axios.post("/api/rants/create", { email: user.email, content: rantContent, category, askForAdvice }, withAuth(token)); setRantContent(""); setAskForAdvice(false); await refreshRants(); } 
+    catch (err) { console.error("Error:", err); }
+    finally { setPosting(false); }
+  };
+
+  if (authLoading) return <LoadingState />;
+  if (!user || !token) return <AuthRequiredState />;
+
+  const trendingRants = [...rants].sort((a, b) => b.upvotes - a.upvotes).slice(0, 3);
+
+  return (
+    <Layout maxWidth="3xl">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-display font-bold flex items-center gap-3">
+          <span className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center shadow-glow">🔥</span>
+          <span className="text-gradient">Rant Zone</span>
+        </h1>
+        <p className="text-dark-400 mt-1">Get it all out. No judgment here. We got you 💯</p>
+      </div>
+
+      {/* Create Rant Card */}
+      <div className="card card-hover p-5 mb-6 border border-orange-500/30">
+        <h2 className="font-bold text-white mb-4 flex items-center gap-2"><Ghost className="w-5 h-5 text-orange-400" />Vent Anonymously</h2>
+        
+        <Textarea value={rantContent} onChange={(e) => setRantContent(e.target.value)} placeholder="Spill everything... what's bothering you? 😤" rows={4} className="mb-3 text-lg" />
+        
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="input w-auto">
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          
+          <label className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-dark-700 rounded-xl hover:bg-dark-600 transition-colors">
+            <input type="checkbox" checked={askForAdvice} onChange={(e) => setAskForAdvice(e.target.checked)} className="w-4 h-4 rounded" />
+            <span className="text-sm text-dark-300">Need advice 💬</span>
+          </label>
+        </div>
+        
+        <Button onClick={handlePostRant} loading={posting} disabled={!rantContent.trim()} className="w-full py-3 text-lg font-bold">
+          🚀 Let It All Out
+        </Button>
+      </div>
+
+      {/* Category Filter */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <button onClick={() => setFilteredCategory(null)} className={`px-4 py-2 rounded-full font-bold text-sm transition-all ${!filteredCategory ? 'bg-orange-500 text-white shadow-glow-sm' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'}`}>
+          All 🔥
+        </button>
+        {categories.map((cat) => (
+          <button key={cat} onClick={() => setFilteredCategory(cat)} className={`px-4 py-2 rounded-full font-bold text-sm transition-all ${filteredCategory === cat ? 'bg-orange-500 text-white shadow-glow-sm' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'}`}>
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Trending Rants */}
+      {trendingRants.length > 0 && (
+        <div className="mb-6">
+          <h2 className="font-bold text-lg text-orange-400 mb-3 flex items-center gap-2"><Sparkles className="w-5 h-5" />Trending Now</h2>
+          <div className="grid grid-cols-1 md:grid-colss3 gap-3">
+            {trendingRants.map((rant) => (
+              <RantCard key={rant.id} rant={rant} onUpvote={() => axios.post("/api/rants/upvote", { email: user.email, rantId: rant.id }, withAuth(token)).then(refreshRants)} onReaction={(id, r) => axios.post("/api/rants/react", { email: user.email, rantId: id, reaction: r }, withAuth(token)).then(refreshRants)} onHug={() => axios.post("/api/rants/hug", { email: user.email, rantId: rant.id }, withAuth(token)).then(refreshRants)} onComment={(id, c) => axios.post("/api/rants/comment", { email: user.email, rantId: id, content: c }, withAuth(token)).then(refreshRants)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All Rants */}
+      <div>
+        <h2 className="font-bold text-lg text-white mb-3">Recent Rants</h2>
+        {rants.length > 0 ? rants.map((rant) => (
+          <RantCard key={rant.id} rant={rant} onUpvote={() => axios.post("/api/rants/upvote", { email: user.email, rantId: rant.id }, withAuth(token)).then(refreshRants)} onReaction={(id, r) => axios.post("/api/rants/react", { email: user.email, rantId: id, reaction: r }, withAuth(token)).then(refreshRants)} onHug={() => axios.post("/api/rants/hug", { email: user.email, rantId: rant.id }, withAuth(token)).then(refreshRants)} onComment={(id, c) => axios.post("/api/rants/comment", { email: user.email, rantId: id, content: c }, withAuth(token)).then(refreshRants)} />
+        )) : <EmptyState title="No rants yet" message="Be the first to vent!" icon={<Flame className="w-12 h-12 text-orange-500" />} />}
+      </div>
+    </Layout>
   );
 }
