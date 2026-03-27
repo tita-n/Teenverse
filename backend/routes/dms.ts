@@ -24,7 +24,7 @@ const upload = multer({
     },
 });
 
-export default function dmRoutes({ db }: RouteDependencies) {
+export default function dmRoutes({ db, io }: RouteDependencies & { io?: any }) {
     const router = express.Router();
 
     // ===== GET conversations list - FIX N+1 with subquery =====
@@ -212,6 +212,23 @@ export default function dmRoutes({ db }: RouteDependencies) {
                  VALUES (?, ?, ?, ?, ?, ?, ?)`,
                 [conversation.id, sender.id, content || "", mediaUrl, mediaType, new Date().toISOString(), isGhostBomb ? 1 : 0]
             );
+
+            // Get the full message for socket emission
+            const senderUsername = await dbGet<{ username: string }>("SELECT username FROM users WHERE email = ?", [email]);
+            const newMessage = {
+                conversationId: conversation.id,
+                sender_username: senderUsername?.username || "Unknown",
+                content: content || "",
+                media_url: mediaUrl,
+                media_type: mediaType,
+                created_at: new Date().toISOString(),
+                is_ghost_bomb: isGhostBomb ? 1 : 0,
+            };
+
+            // Emit to all in the chat room
+            if (io) {
+                io.to(`chat-${conversation.id}`).emit("new_message", newMessage);
+            }
 
             res.json({ message: "Message sent successfully", conversationId: conversation.id });
         } catch (err) {

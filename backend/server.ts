@@ -200,7 +200,7 @@ const battleRoutes = require("./routes/battles").default;
 app.use("/api", authRoutes);
 app.use("/api/posts", authenticateToken, postRoutes);
 app.use("/api/users", authenticateToken, usersRouter);
-app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY }));
+app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY, io }));
 app.use("/api/settings", authenticateToken, settingsRouter);
 app.use("/api/rants", authenticateToken, rantRoutes);
 app.use("/api/hype-battles", authenticateToken, battleRoutes);
@@ -214,6 +214,35 @@ app.use("/api/showdown", authenticateToken, showdownRouter);
 io.on("connection", (socket) => {
     log("info", `Socket connected: ${socket.id}`);
 
+    // === USER ONLINE STATUS ===
+    socket.on("user_online", (userId) => {
+        socket.join(`user-${userId}`);
+        io.emit("user_status", { userId, status: "online" });
+        log("debug", `User ${userId} is online`);
+    });
+
+    socket.on("user_offline", (userId) => {
+        io.emit("user_status", { userId, status: "offline" });
+        log("debug", `User ${userId} is offline`);
+    });
+
+    // === CHAT ROOMS ===
+    socket.on("join_chat", (conversationId) => {
+        socket.join(`chat-${conversationId}`);
+        log("debug", `User ${socket.id} joined chat-${conversationId}`);
+    });
+
+    socket.on("leave_chat", (conversationId) => {
+        socket.leave(`chat-${conversationId}`);
+        log("debug", `User ${socket.id} left chat-${conversationId}`);
+    });
+
+    socket.on("send_message", async (data) => {
+        const { conversationId, message } = data;
+        io.to(`chat-${conversationId}`).emit("new_message", message);
+    });
+
+    // === HYPER BATTLES ===
     socket.on("join_battle", (battleId) => {
         socket.join(`battle-${battleId}`);
         log("debug", `User ${socket.id} joined battle-${battleId}`);
@@ -238,6 +267,15 @@ io.on("connection", (socket) => {
         } catch (err) {
             log("error", "Vote broadcast error:", err);
         }
+    });
+
+    // === SHOWDOWN ===
+    socket.on("join_showdown", (tournamentId) => {
+        socket.join(`showdown-${tournamentId}`);
+    });
+
+    socket.on("leave_showdown", (tournamentId) => {
+        socket.leave(`showdown-${tournamentId}`);
     });
 
     socket.on("disconnect", () => {

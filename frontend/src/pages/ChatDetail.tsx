@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useSocket } from "../context/SocketContext";
 import { withAuth } from "../lib/api";
 import Button from "../components/ui/Button";
 import { LoadingState, AuthRequiredState } from "../components/ui/PageStates";
@@ -27,6 +28,7 @@ export default function ChatDetail() {
   const { state } = useLocation();
   const { otherUsername } = state || {};
   const { user, token, loading: authLoading } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -34,17 +36,33 @@ export default function ChatDetail() {
   const [file, setFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Join chat room and listen for real-time messages
   useEffect(() => {
     if (!user || !token || !conversationId) return;
+    
+    // Fetch initial messages
     const fetchMessages = () => {
       axios.get(`/api/dms/messages/${conversationId}?email=${user.email}`, withAuth(token))
         .then((res) => setMessages(res.data))
         .catch((err) => console.error("Error:", err));
     };
     fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
-    return () => clearInterval(interval);
-  }, [conversationId, user, token]);
+
+    // Join chat room via socket
+    if (socket) {
+      socket.emit("join_chat", conversationId);
+      
+      // Listen for new messages
+      socket.on("new_message", (newMsg: Message) => {
+        setMessages(prev => [...prev, newMsg]);
+      });
+      
+      return () => {
+        socket.emit("leave_chat", conversationId);
+        socket.off("new_message");
+      };
+    }
+  }, [conversationId, user, token, socket]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
