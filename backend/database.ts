@@ -543,9 +543,22 @@ await query(`
       content TEXT NOT NULL,
       category TEXT NOT NULL,
       upvotes INTEGER DEFAULT 0,
-      reactions JSONB DEFAULT '{}'::jsonb,
+      reaction_counts JSONB DEFAULT '{}'::jsonb,
       hugs INTEGER DEFAULT 0,
       ask_for_advice INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await query(`ALTER TABLE rants ADD COLUMN IF NOT EXISTS reaction_counts JSONB DEFAULT '{}'::jsonb`);
+
+  // Rant comments table
+  await query(`
+    CREATE TABLE IF NOT EXISTS rant_comments (
+      id SERIAL PRIMARY KEY,
+      rant_id INTEGER REFERENCES rants(id) ON DELETE CASCADE,
+      user_email TEXT,
+      content TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
