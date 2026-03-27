@@ -49,11 +49,11 @@ export default function Navigation() {
         key={link.to}
         to={href}
         onClick={() => isMobile && setIsOpen(false)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
           active
-            ? "bg-white/20 text-white"
-            : "text-white/80 hover:text-white hover:bg-white/10"
-        } ${isMobile ? "w-full" : ""}`}
+            ? "bg-neon-red/20 text-neon-red border border-neon-red/30 shadow-glow-sm"
+            : "text-dark-200 hover:text-white hover:bg-dark-700 hover:border-dark-500"
+        } ${isMobile ? "w-full justify-start" : ""}`}
       >
         <Icon className="w-4 h-4" />
         {link.label}
@@ -62,18 +62,20 @@ export default function Navigation() {
   }, [user, isActive, location.pathname]);
 
   return (
-    <nav className="bg-gradient-to-r from-brand-600 to-brand-700 shadow-lg sticky top-0 z-50">
+    <nav className="nav-glass">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center">
-              <Zap className="w-5 h-5 text-white" />
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="w-10 h-10 bg-gradient-to-br from-neon-red to-red-800 rounded-xl flex items-center justify-center shadow-glow-sm group-hover:shadow-glow transition-shadow">
+              <Zap className="w-6 h-6 text-white" />
             </div>
-            <span className="text-white font-bold text-xl tracking-tight">TeenVerse</span>
+            <span className="text-xl font-display font-bold text-gradient">
+              Teen<span className="text-neon-red">Verse</span>
+            </span>
           </Link>
 
           {user && (
-            <div className="hidden lg:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-2">
               {navLinks.map((link) => renderNavLink(link))}
             </div>
           )}

@@ -1,85 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-neon-red: #ef4444;
+    --color-neon-gold: #f59e0b;
+    --color-neon-cyan: #06b6d4;
+  }
+  
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  
   body {
-    @apply bg-surface text-tx-primary font-sans;
+    @apply bg-dark-900 text-white font-sans min-h-screen;
+    background-image: 
+      radial-gradient(ellipse at top, rgba(239,68,68,0.1) 0%, transparent 50%),
+      url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    background-size: 100% 100%, 60px 60px;
   }
+
+  /* Custom Scrollbar */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #c4b5fd transparent;
+    scrollbar-color: #ef4444 #1a1a1a;
+  }
+  
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  *::-webkit-scrollbar-track {
+    background: #111111;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, #ef4444, #dc2626);
+    border-radius: 3px;
+  }
+  
+  *::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, #f87171, #ef4444);
+  }
+  
+  /* Selection */
+  ::selection {
+    @apply bg-neon-red text-white;
   }
 }
 
 @layer components {
+  /* Neon Button Base */
   .btn {
-    @apply inline-flex items-center justify-center font-medium rounded-lg px-4 py-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center font-semibold rounded-xl px-5 py-2.5 
+           transition-all duration-200 ease-out
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-900
+           disabled:opacity-40 disabled:cursor-not-allowed
+           active:scale-95;
   }
+  
+  /* Primary - Neon Red Glow */
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500 active:bg-brand-800;
+    @apply btn bg-gradient-to-r from-neon-red to-red-700 text-white 
+           hover:shadow-glow-lg hover:scale-[1.02]
+           focus:ring-neon-red;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
   }
+  
+  /* Secondary - Dark with border */
   .btn-secondary {
-    @apply btn bg-white text-tx-primary border border-surface-border hover:bg-surface-muted focus:ring-brand-500;
+    @apply btn bg-dark-700 border border-dark-500 text-white
+           hover:bg-dark-600 hover:border-neon-red hover:shadow-glow-sm hover:text-neon-red
+           focus:ring-neon-red;
   }
+  
+  /* Ghost - Transparent */
   .btn-ghost {
-    @apply btn bg-transparent text-tx-secondary hover:bg-surface-muted hover:text-tx-primary focus:ring-brand-500;
+    @apply btn bg-transparent text-dark-200
+           hover:bg-dark-700 hover:text-white
+           focus:ring-neon-red;
   }
+  
+  /* Danger */
   .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+    @apply btn bg-red-600 text-white
+           hover:bg-red-500 hover:shadow-glow
+           focus:ring-red-500;
   }
+  
+  /* Success */
   .btn-success {
-    @apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+    @apply btn bg-green-600 text-white
+           hover:bg-green-500 hover:shadow-glow-gold
+           focus:ring-green-500;
   }
+  
+  /* Sizes */
   .btn-sm {
-    @apply px-3 py-1.5 text-sm;
+    @apply px-3 py-1.5 text-sm rounded-lg;
   }
   .btn-lg {
-    @apply px-6 py-3 text-lg;
+    @apply px-8 py-4 text-lg rounded-2xl;
+  }
+  .btn-icon {
+    @apply p-3 rounded-xl;
   }
 
+  /* Input - Dark Glassmorphism */
   .input {
-    @apply w-full px-4 py-3 bg-white border border-surface-border rounded-lg text-tx-primary placeholder:text-tx-muted transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500;
+    @apply w-full px-4 py-3.5 bg-dark-800/80 border border-dark-500 rounded-xl 
+           text-white placeholder:text-dark-300 
+           transition-all duration-200
+           focus:outline-none focus:border-neon-red focus:ring-2 focus:ring-neon-red/30 
+           hover:border-dark-400;
+    backdrop-filter: blur(10px);
   }
+  
   .input-error {
-    @apply border-red-400 focus:ring-red-500 focus:border-red-500;
+    @apply border-red-500 focus:ring-red-500/30;
   }
 
+  /* Card - Glassmorphism */
   .card {
-    @apply bg-surface-card rounded-xl shadow-card border border-surface-border;
+    @apply bg-dark-800/80 backdrop-blur-xl rounded-2xl border border-dark-600 
+           shadow-card overflow-hidden;
+    backdrop-filter: blur(20px);
   }
+  
   .card-hover {
-    @apply card transition-shadow duration-200 hover:shadow-card-hover;
+    @apply card transition-all duration-300 ease-out
+           hover:border-neon-red/50 hover:shadow-card-hover hover:scale-[1.01]
+           hover:bg-dark-700/90;
+  }
+  
+  .card-glow {
+    @apply card relative
+           before:absolute before:inset-0 before:rounded-2xl 
+           before:bg-gradient-to-r from-neon-red/20 to-transparent 
+           before:opacity-0 before:transition-opacity hover:before:opacity-100;
   }
 
+  /* Badge - Neon */
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider;
   }
   .badge-brand {
-    @apply badge bg-brand-100 text-brand-700;
+    @apply badge bg-neon-red/20 text-neon-red border border-neon-red/30;
   }
   .badge-success {
-    @apply badge bg-green-100 text-green-700;
-  }
-  .badge-danger {
-    @apply badge bg-red-100 text-red-700;
+    @apply badge bg-green-500/20 text-green-400 border border-green-500/30;
   }
   .badge-warning {
-    @apply badge bg-yellow-100 text-yellow-700;
+    @apply badge bg-neon-gold/20 text-neon-gold border border-neon-gold/30;
   }
   .badge-neutral {
-    @apply badge bg-gray-100 text-gray-700;
+    @apply badge bg-dark-600 text-dark-200 border border-dark-500;
+  }
+  .badge-live {
+    @apply badge bg-neon-red animate-pulse;
   }
 
-  .skeleton {
-    @apply bg-gray-200 rounded animate-pulse;
-    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
-    background-size: 200% 100%;
-    animation: shimmer 2s infinite;
+  /* Navigation - Glassmorphism */
+  .nav-glass {
+    @apply bg-dark-900/80 backdrop-blur-xl border-b border-dark-700 sticky top-0 z-50;
   }
+
+  /* Text Gradients */
+  .text-gradient {
+    @apply bg-gradient-to-r from-neon-red via-neon-gold to-neon-cyan bg-clip-text text-transparent;
+  }
+  .text-gradient-red {
+    @apply bg-gradient-to-r from-neon-red to-red-700 bg-clip-text text-transparent;
+  }
+  .text-gradient-gold {
+    @apply bg-gradient-to-r from-neon-gold to-yellow-400 bg-clip-text text-transparent;
+  }
+
+  /* Skeleton Loading */
+  .skeleton {
+    @apply bg-dark-700 rounded animate-pulse;
+    background: linear-gradient(90deg, #1a1a1a 25%, #262626 50%, #1a1a1a 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Background Patterns */
+  .bg-grid {
+    background-image: 
+      linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  
+  .bg-dot-pattern {
+    background-image: radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  /* Glass Effect */
+  .glass {
+    @apply bg-dark-800/50 backdrop-blur-lg border border-dark-600;
+  }
+
+  /* Neon Border Glow */
+  .neon-border {
+    @apply border border-neon-red/50 shadow-glow-sm;
+  }
+  
+  .neon-border-gold {
+    @apply border border-neon-gold/50 shadow-glow-gold;
+  }
+
+  /* Gradient Backgrounds */
+  .bg-neon-gradient {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%);
+  }
+  
+  .bg-dark-gradient {
+    background: linear-gradient(180deg, #0a0a0a 0%, #111111 100%);
+  }
+  
+  .bg-card-gradient {
+    background: linear-gradient(180deg, #111111 0%, #0a0a0a 100%);
+  }
+}
+
+/* Animation Utilities */
+@layer utilities {
+  .animate-in {
+    animation: fadeIn 0.3s ease-out, slideUp 0.4s ease-out;
+  }
+  
+  .stagger-1 { animation-delay: 0.1s; }
+  .stagger-2 { animation-delay: 0.2s; }
+  .stagger-3 { animation-delay: 0.3s; }
+  .stagger-4 { animation-delay: 0.4s; }
+  .stagger-5 { animation-delay: 0.5s; }
 }
