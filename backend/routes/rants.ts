@@ -107,7 +107,7 @@ router.post("/create", async (req, res, next) => {
     }
 });
 
-// Upvote a rant
+// Upvote a rant - only once per user
 router.post("/upvote", async (req, res, next) => {
     try {
         const { email, rantId } = req.body;
@@ -115,11 +115,71 @@ router.post("/upvote", async (req, res, next) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
+        const user = await dbGet("SELECT id FROM users WHERE email = ?", [email]);
+        if (!user) return res.status(404).json({ message: "User not found" });
+        
         const rant = await dbGet("SELECT id FROM rants WHERE id = ?", [rantId]);
         if (!rant) return res.status(404).json({ message: "Rant not found" });
 
+        // Check if already upvoted using email to track
+        const alreadyUpvoted = await dbGet(
+            "SELECT 1 FROM rant_upvotes WHERE rant_id = ? AND user_email = ?", 
+            [rantId, email]
+        );
+        if (alreadyUpvoted) {
+            return res.status(400).json({ message: "Already upvoted" });
+        }
+        
+        await dbRun("INSERT INTO rant_upvotes (rant_id, user_email) VALUES (?, ?)", [rantId, email]);
         await dbRun("UPDATE rants SET upvotes = upvotes + 1 WHERE id = ?", [rantId]);
-        res.json({ message: "Upvoted successfully!" });
+        res.json({ message: "Upvoted!" });
+    } catch (err) {
+        console.error("Upvote rant error:", err);
+        next(err);
+    }
+});
+
+// Add a reaction to a rant - only one reaction per user
+router.post("/react", async (req, res, next) => {
+    try {
+        const { email, rantId, reaction } = req.body;
+        if (req.user.email !== email) {
+            return res.status(403).json({ message: "Unauthorized" });
+        }
+
+        if (!VALID_REACTIONS.includes(reaction)) {
+            return res.status(400).json({ message: "Invalid reaction" });
+        }
+
+        const rant = await dbGet("SELECT reactions FROM rants WHERE id = ?", [rantId]);
+        if (!rant) return res.status(404).json({ message: "Rant not found" });
+
+        // Check if user already reacted
+        const existingReaction = await dbGet(
+            "SELECT reaction FROM rant_reactions WHERE rant_id = ? AND user_email = ?",
+            [rantId, email]
+        );
+        
+        if (existingReaction) {
+            // Replace reaction if different
+            if (existingReaction.reaction !== reaction) {
+                await dbRun("UPDATE rant_reactions SET reaction = ? WHERE rant_id = ? AND user_email = ?", [reaction, rantId, email]);
+            }
+            return res.json({ message: "Reaction updated!" });
+        }
+        
+        // Add new reaction
+        await dbRun("INSERT INTO rant_reactions (rant_id, user_email, reaction) VALUES (?, ?, ?)", [rantId, email, reaction]);
+
+        let reactions: Record<string, number> = {};
+        if (rant.reactions) {
+            try { reactions = JSON.parse(rant.reactions); }
+            catch { reactions = {}; }
+        }
+
+        reactions[reaction] = (reactions[reaction] || 0) + 1;
+        await dbRun("UPDATE rants SET reactions = ? WHERE id = ?", [JSON.stringify(reactions), rantId]);
+        res.json({ message: "Reacted!" });
     } catch (err) {
         console.error("Upvote rant error:", err);
         next(err);

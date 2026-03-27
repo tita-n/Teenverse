@@ -559,6 +559,29 @@ await query(`
     )
   `);
 
+  // Track who upvoted rants (one upvote per user)
+  await query(`
+    CREATE TABLE IF NOT EXISTS rant_upvotes (
+      id SERIAL PRIMARY KEY,
+      rant_id INTEGER NOT NULL REFERENCES rants(id) ON DELETE CASCADE,
+      user_email TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(rant_id, user_email)
+    )
+  `);
+
+  // Track who reacted to rants (one reaction per user)
+  await query(`
+    CREATE TABLE IF NOT EXISTS rant_reactions (
+      id SERIAL PRIMARY KEY,
+      rant_id INTEGER NOT NULL REFERENCES rants(id) ON DELETE CASCADE,
+      user_email TEXT NOT NULL,
+      reaction TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(rant_id, user_email)
+    )
+  `);
+
   await query(`
     CREATE TABLE IF NOT EXISTS shop_items (
       id SERIAL PRIMARY KEY,
