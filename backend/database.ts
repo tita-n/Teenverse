@@ -160,6 +160,16 @@ export async function initializeDatabase(): Promise<void> {
     )
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS replies (
+      id SERIAL PRIMARY KEY,
+      comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
 await query(`
     CREATE TABLE IF NOT EXISTS battle_votes (
       id SERIAL PRIMARY KEY,

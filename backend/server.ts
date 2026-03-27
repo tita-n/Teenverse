@@ -199,6 +199,7 @@ const battleRoutes = require("./routes/battles").default;
 // Mount auth without rate limiting globally - rate limit applied in auth.ts for login ONLY
 app.use("/api", authRoutes);
 app.use("/api/posts", authenticateToken, postRoutes);
+app.use("/api", authenticateToken, require("./routes/comments").default);
 app.use("/api/users", authenticateToken, usersRouter);
 app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY, io }));
 app.use("/api/settings", authenticateToken, settingsRouter);
