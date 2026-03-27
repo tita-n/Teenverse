@@ -203,7 +203,7 @@ app.use("/api", authenticateToken, require("./routes/comments").default);
 app.use("/api/users", authenticateToken, usersRouter);
 app.use("/api/dms", authenticateToken, dmRoutes({ db: { query, queryOne }, SECRET_KEY, io }));
 app.use("/api/settings", authenticateToken, settingsRouter);
-app.use("/api/rants", authenticateToken, rantRoutes);
+app.use("/api/rants", rantRoutes);
 app.use("/api/hype-battles", authenticateToken, battleRoutes);
 app.use("/api/game-squads", authenticateToken, squadRoutes);
 app.use("/api/tournaments", authenticateToken, tournamentRoutes);
