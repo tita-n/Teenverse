@@ -122,19 +122,20 @@ export default function RantZone() {
 
   const refreshRants = () => {
     if (!token) return;
-    axios.get("/api/rants").then((res) => setRants(res.data)).catch(console.error);
+    axios.get("/api/rants", withAuth(token)).then((res) => setRants(res.data)).catch(console.error);
   };
 
   useEffect(() => {
     if (!token) { setLoading(false); return; }
-    refreshRants().finally(() => setLoading(false));
+    refreshRants();
+    setLoading(false);
   }, [token]);
 
   const handlePostRant = async () => {
     if (!user || !rantContent.trim()) return;
     try { 
       setPosting(true); 
-      await axios.post("/api/rants/create", { email: user.email, content: rantContent, category, askForAdvice });
+      await axios.post("/api/rants/create", { email: user.email, content: rantContent, category, askForAdvice }, withAuth(token));
       setRantContent(""); setAskForAdvice(false); 
       refreshRants(); 
     } catch (err) { console.error("Error posting rant:", err); alert("Failed to post rant - try again"); }
@@ -142,16 +143,16 @@ export default function RantZone() {
   };
 
   const handleUpvote = async (rantId: number) => {
-    try { await axios.post("/api/rants/upvote", { rantId }); refreshRants(); } catch (err) { console.error(err); }
+    try { await axios.post("/api/rants/upvote", { rantId }, withAuth(token)); refreshRants(); } catch (err) { console.error(err); }
   };
   const handleReact = async (rantId: number, reaction: string) => {
-    try { await axios.post("/api/rants/react", { userEmail: user?.email, rantId, reaction }); refreshRants(); } catch (err) { console.error(err); }
+    try { await axios.post("/api/rants/react", { userEmail: user?.email, rantId, reaction }, withAuth(token)); refreshRants(); } catch (err) { console.error(err); }
   };
   const handleHug = async (rantId: number) => {
-    try { await axios.post("/api/rants/hug", { rantId }); refreshRants(); } catch (err) { console.error(err); }
+    try { await axios.post("/api/rants/hug", { rantId }, withAuth(token)); refreshRants(); } catch (err) { console.error(err); }
   };
   const handleComment = async (rantId: number, content: string) => {
-    try { await axios.post("/api/rants/comment", { userEmail: user?.email, rantId, content }); refreshRants(); } catch (err) { console.error(err); }
+    try { await axios.post("/api/rants/comment", { userEmail: user?.email, rantId, content }, withAuth(token)); refreshRants(); } catch (err) { console.error(err); }
   };
 
   if (authLoading) return <LoadingState />;
